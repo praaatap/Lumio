@@ -1,8 +1,10 @@
 name: Build Release APK
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - main
+      
 
 jobs:
   build:
@@ -16,24 +18,33 @@ jobs:
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
+          cache: 'gradle'
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.29.0'
-          channel: stable
+          channel: 'stable'
           cache: true
 
       - name: Install dependencies
         run: flutter pub get
 
+      # This fix prevents the "paging file/memory" error on the runner
+      - name: Configure Gradle Memory
+        run: |
+          echo "org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8" >> android/gradle.properties
+          echo "kotlin.daemon.jvm.options=-Xmx1024m" >> android/gradle.properties
+
       - name: Build release APK
-        run: flutter build apk --release
+        # No-codesign is used if you haven't set up keystores yet
+        run: flutter build apk --release --no-tree-shake-icons
 
       - name: Upload APK to release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: build/app/outputs/flutter-apk/app-release.apk
         env:
