@@ -57,15 +57,19 @@ class AlarmService {
     final settings = AlarmSettings(
       id: alarmId,
       dateTime: targetTime,
-      assetAudioPath: alarm.sound == 'default' ? 'assets/alarm.mp3' : alarm.sound,
+      assetAudioPath: alarm.sound == 'default' ? null : alarm.sound,
+      volumeSettings:  VolumeSettings.fade(
+        fadeDuration: Duration(seconds: 8),
+      ),
+      notificationSettings: NotificationSettings(
+        title: alarm.label.isEmpty ? 'FlowMind Alarm' : alarm.label,
+        body: alarm.aiTag,
+      ),
       loopAudio: true,
       vibrate: true,
       warningNotificationOnKill:
           !kIsWeb && defaultTargetPlatform == TargetPlatform.android,
       androidFullScreenIntent: true,
-      notificationTitle: alarm.label.isEmpty ? 'FlowMind Alarm' : alarm.label,
-      notificationBody: alarm.aiTag,
-      enableNotificationOnKill: true,
     );
 
     await Alarm.set(alarmSettings: settings);
@@ -89,8 +93,9 @@ class AlarmService {
         iOS: DarwinNotificationDetails(),
       ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      matchDateTimeComponents:
-          alarm.repeatDays.isNotEmpty ? DateTimeComponents.time : null,
+      matchDateTimeComponents: alarm.repeatDays.isNotEmpty
+          ? DateTimeComponents.time
+          : null,
     );
 
     await saveAlarm(alarm.copyWith(isEnabled: true));
@@ -151,7 +156,9 @@ class AlarmService {
 
   static int _idToInt(String id) {
     final sanitized = id.replaceAll('-', '');
-    final prefix = sanitized.length >= 8 ? sanitized.substring(0, 8) : sanitized;
+    final prefix = sanitized.length >= 8
+        ? sanitized.substring(0, 8)
+        : sanitized;
     return int.tryParse(prefix, radix: 16) ?? id.hashCode.abs();
   }
 

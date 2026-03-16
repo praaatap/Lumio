@@ -9,6 +9,7 @@ import 'screens/focus_timer_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/insights_screen.dart';
 import 'screens/settings_screen.dart';
+import 'screens/splash_screen.dart';
 import 'services/alarm_service.dart';
 import 'services/alarm_ring_flow.dart';
 import 'services/app_state.dart';
@@ -80,10 +81,12 @@ class FlowMindApp extends StatelessWidget {
           ),
         ),
         routes: {
-          '/': (_) => const MainScaffold(),
+          '/': (_) => const SplashScreen(),
+          '/app': (_) => const MainScaffold(),
           FocusTimerScreen.routeName: (_) => const FocusTimerScreen(),
           AiChatScreen.routeName: (_) => const AiChatScreen(),
           AlarmRingScreen.routeName: (_) => const AlarmRingScreen(),
+          SplashScreen.routeName: (_) => const SplashScreen(),
         },
       ),
     );

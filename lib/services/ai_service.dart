@@ -1,4 +1,5 @@
 import 'package:genkit/genkit.dart';
+import 'package:genkit/client.dart';
 import 'package:genkit_google_genai/genkit_google_genai.dart';
 
 class AiService {
@@ -21,11 +22,12 @@ class AiService {
   Future<String> getAISuggestion(String userInput) async {
     if (suggestAlarmFlowUrl.isNotEmpty) {
       try {
-        final flow = defineRemoteAction<String, String>(
-          'suggestAlarm',
+        final flow = defineRemoteAction<String, String, String, void>(
           url: suggestAlarmFlowUrl,
+          fromResponse: (jsonData) => jsonData.toString(),
+          fromStreamChunk: (jsonData) => jsonData.toString(),
         );
-        return await flow(userInput);
+        return await flow.call(input: userInput);
       } catch (_) {
         // Fall through to direct model generation when remote flow is unavailable.
       }
@@ -45,8 +47,8 @@ class AiService {
             'short rationale. User context: $context',
       );
 
-      final text = response.text?.trim();
-      if (text == null || text.isEmpty) {
+      final text = response.text.trim();
+      if (text.isEmpty) {
         return fallback;
       }
       return text;
