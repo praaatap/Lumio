@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/alarm_providers.dart';
 import '../services/ai_service.dart';
+import '../services/smart_alarm_service.dart';
 import '../utils/debouncer.dart';
 import '../widgets/alarm_card.dart';
 
@@ -80,6 +81,8 @@ class _AddAlarmSheet extends ConsumerStatefulWidget {
 
 class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   final TextEditingController _labelController = TextEditingController();
+  final TextEditingController _voiceQuickAddController = TextEditingController();
+  final TextEditingController _meetingsController = TextEditingController();
   late final Debouncer _aiDebouncer;
 
   int _hour = 7;
@@ -95,6 +98,14 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   bool _loadingDailyChoices = false;
   String? _dailyChoicesError;
   List<AiAlarmChoice> _dailyChoices = const [];
+  bool _loadingWeeklyPlan = false;
+  String? _weeklyPlanError;
+  List<WeeklyAlarmPlanItem> _weeklyPlan = const [];
+  DayTypeProfile _profile = DayTypeProfile.workday;
+  double _sleepGoalHours = 7.5;
+  bool _weeklyGymDays = false;
+  int _commuteMinutes = 30;
+  int _sleepDebtMinutes = 0;
 
   @override
   void initState() {
@@ -105,6 +116,8 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   @override
   void dispose() {
     _labelController.dispose();
+    _voiceQuickAddController.dispose();
+    _meetingsController.dispose();
     _aiDebouncer.dispose();
     super.dispose();
   }
@@ -160,6 +173,70 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
               ),
               const SizedBox(height: 24),
               Text(
+                'Day Type Profile',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: DayTypeProfile.values
+                    .map(
+                      (profile) => ChoiceChip(
+                        label: Text(_profileLabel(profile)),
+                        selected: _profile == profile,
+                        onSelected: (selected) {
+                          if (!selected) return;
+                          _applyProfile(profile);
+                        },
+                      ),
+                    )
+                    .toList(),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Smart Sleep Window',
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Sleep Goal: ${_sleepGoalHours.toStringAsFixed(1)}h',
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    Slider(
+                      value: _sleepGoalHours,
+                      min: 6.0,
+                      max: 9.0,
+                      divisions: 12,
+                      onChanged: (value) => setState(() => _sleepGoalHours = value),
+                    ),
+                    Text(
+                      'Suggested bedtime: ${_suggestedBedtimeLabel()}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
                 'Repeat',
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                   fontWeight: FontWeight.w700,
@@ -210,26 +287,42 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                 }),
               ),
               const SizedBox(height: 24),
-              Row(
-                children: [
-                  Text(
-                    'Sound',
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w700,
+              InkWell(
+                onTap: _cycleSound,
+                borderRadius: BorderRadius.circular(12),
+                child: Row(
+                  children: [
+                    Text(
+                      'Sound',
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    _sound == 'default' ? 'Default Ringtone' : _sound,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      color: const Color(0xFF94A3B8),
+                    const Spacer(),
+                    Text(
+                      _soundLabel(),
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: const Color(0xFF94A3B8),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
-                ],
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                  ],
+                ),
               ),
               const SizedBox(height: 24),
+              TextField(
+                controller: _voiceQuickAddController,
+                decoration: InputDecoration(
+                  hintText: 'Voice Quick Add text, e.g. wake me at 6:20 for gym tomorrow',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  suffixIcon: TextButton(
+                    onPressed: _applyVoiceQuickAdd,
+                    child: const Text('Apply'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
@@ -348,6 +441,110 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFECFEFF),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_month_outlined),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'AI WEEKLY PLANNER',
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _loadingWeeklyPlan ? null : _generateWeeklyPlan,
+                          child: _loadingWeeklyPlan
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Generate'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _meetingsController,
+                      decoration: const InputDecoration(
+                        hintText: 'Meetings (for calendar-aware planning)',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Gym days in week',
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                        Switch(
+                          value: _weeklyGymDays,
+                          onChanged: (value) => setState(() => _weeklyGymDays = value),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Commute: $_commuteMinutes min  •  Sleep debt: $_sleepDebtMinutes min',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(letterSpacing: 0),
+                    ),
+                    Slider(
+                      value: _commuteMinutes.toDouble(),
+                      min: 0,
+                      max: 120,
+                      divisions: 24,
+                      onChanged: (v) => setState(() => _commuteMinutes = v.round()),
+                    ),
+                    Slider(
+                      value: _sleepDebtMinutes.toDouble(),
+                      min: 0,
+                      max: 180,
+                      divisions: 18,
+                      onChanged: (v) => setState(() => _sleepDebtMinutes = v.round()),
+                    ),
+                    if (_weeklyPlanError != null)
+                      Text(
+                        _weeklyPlanError!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Colors.red,
+                              letterSpacing: 0,
+                            ),
+                      ),
+                    if (_weeklyPlan.isNotEmpty)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _weeklyPlan
+                            .map(
+                              (item) => ActionChip(
+                                label: Text(
+                                  '${_weekdayLabel(item.dayOfWeek)} ${_formatHour(item.hour24)}:${item.minute.toString().padLeft(2, '0')} ${item.hour24 >= 12 ? 'PM' : 'AM'}',
+                                ),
+                                onPressed: () => _applyWeeklyItem(item),
+                              ),
+                            )
+                            .toList(),
+                      ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -400,6 +597,85 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
     }
     final days = _repeatDays.toList()..sort();
     return days.first;
+  }
+
+  String _profileLabel(DayTypeProfile profile) {
+    switch (profile) {
+      case DayTypeProfile.workday:
+        return 'Workday';
+      case DayTypeProfile.gym:
+        return 'Gym';
+      case DayTypeProfile.weekend:
+        return 'Weekend';
+      case DayTypeProfile.travel:
+        return 'Travel';
+    }
+  }
+
+  void _applyProfile(DayTypeProfile profile) {
+    final defaults = SmartAlarmService.defaultsForProfile(profile);
+    setState(() {
+      _profile = profile;
+      _hour = _formatHour(defaults.time.hour);
+      _minute = defaults.time.minute;
+      _isAm = defaults.time.hour < 12;
+      _repeatDays
+        ..clear()
+        ..addAll(defaults.repeatDays);
+      _labelController.text = defaults.label;
+      _aiTag = defaults.aiTag;
+    });
+  }
+
+  String _suggestedBedtimeLabel() {
+    final hour24 = _isAm ? (_hour % 12) : (_hour % 12) + 12;
+    final bedtime = SmartAlarmService.suggestBedtime(
+      wakeTime: TimeOfDay(hour: hour24, minute: _minute),
+      sleepHours: _sleepGoalHours,
+    );
+    return '${_formatHour(bedtime.hour)}:${bedtime.minute.toString().padLeft(2, '0')} ${bedtime.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  String _soundLabel() {
+    switch (_sound) {
+      case 'rotate':
+        return 'Rotate Daily';
+      case 'default':
+      default:
+        return 'Default Ringtone';
+    }
+  }
+
+  void _cycleSound() {
+    setState(() {
+      _sound = _sound == 'default' ? 'rotate' : 'default';
+    });
+  }
+
+  void _applyVoiceQuickAdd() {
+    final parsed = SmartAlarmService.parseQuickAdd(_voiceQuickAddController.text);
+    if (parsed == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not parse quick add text.')),
+      );
+      return;
+    }
+
+    setState(() {
+      _hour = _formatHour(parsed.hour24);
+      _minute = parsed.minute;
+      _isAm = parsed.hour24 < 12;
+      _labelController.text = parsed.label;
+      _aiTag = parsed.dayOffset > 0
+          ? 'Quick add for tomorrow'
+          : 'Quick add for today';
+      if (parsed.dayOffset > 0) {
+        final tomorrow = DateTime.now().add(const Duration(days: 1)).weekday;
+        _repeatDays
+          ..clear()
+          ..add(tomorrow);
+      }
+    });
   }
 
   String _routinePrompt() {
@@ -580,6 +856,67 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
         _dailyChoicesError = e is TimeoutException
             ? 'Daily AI choices timed out'
             : 'Could not load daily choices';
+      });
+    }
+  }
+
+  String _weekdayLabel(int dayOfWeek) {
+    const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final index = dayOfWeek - 1;
+    if (index < 0 || index >= names.length) {
+      return 'Day';
+    }
+    return names[index];
+  }
+
+  void _applyWeeklyItem(WeeklyAlarmPlanItem item) {
+    setState(() {
+      _hour = _formatHour(item.hour24);
+      _minute = item.minute;
+      _isAm = item.hour24 < 12;
+      _labelController.text = item.label;
+      _aiTag = item.aiTag;
+      _repeatDays
+        ..clear()
+        ..add(item.dayOfWeek);
+    });
+  }
+
+  Future<void> _generateWeeklyPlan() async {
+    if (!mounted) return;
+
+    setState(() {
+      _loadingWeeklyPlan = true;
+      _weeklyPlanError = null;
+    });
+
+    try {
+      final plan = await ref.read(
+        weeklyPlannerProvider(
+          WeeklyPlannerRequest(
+            routine: _routinePrompt(),
+            meetings: _meetingsController.text.trim(),
+            gymDays: _weeklyGymDays,
+            commuteMinutes: _commuteMinutes,
+            sleepDebtMinutes: _sleepDebtMinutes,
+          ),
+        ).future,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _loadingWeeklyPlan = false;
+        _weeklyPlan = plan;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingWeeklyPlan = false;
+        _weeklyPlanError = e is TimeoutException
+            ? 'Weekly planner timed out'
+            : 'Could not generate weekly plan';
       });
     }
   }

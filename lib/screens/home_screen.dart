@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../services/alarm_service.dart';
 import '../services/alarm_providers.dart';
+import '../services/smart_alarm_service.dart';
 import '../widgets/alarm_card.dart';
 import '../widgets/ai_chip.dart';
 import 'ai_chat_screen.dart';
@@ -171,6 +173,53 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: 22),
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Mood + Sleep Check-In',
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Quick daily check-in can auto-adjust your next alarm.',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () => _showMoodCheckIn(context),
+                                child: const Text('Check In'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Wind-down: ${SmartAlarmService.windDownChecklist().first}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      letterSpacing: 0,
+                                    ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 22),
                   Row(
                     children: [
                       Expanded(
@@ -210,6 +259,71 @@ class HomeScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('Error: $err')),
       ),
+    );
+  }
+
+  Future<void> _showMoodCheckIn(BuildContext context) async {
+    var energy = 3.0;
+    var mood = 3.0;
+    var sleep = 3.0;
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Morning Check-In'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _sliderRow('Energy', energy, (v) => setState(() => energy = v)),
+              _sliderRow('Mood', mood, (v) => setState(() => mood = v)),
+              _sliderRow('Sleep', sleep, (v) => setState(() => sleep = v)),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true) {
+      return;
+    }
+
+    await SmartAlarmService.saveMoodCheckIn(
+      energy: energy.round(),
+      mood: mood.round(),
+      sleepQuality: sleep.round(),
+    );
+    await AlarmService.autoAdjustNextAlarmFromMood(
+      energy: energy.round(),
+      sleepQuality: sleep.round(),
+    );
+
+    if (!context.mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Check-in saved. Next alarm tuned.')),
+    );
+  }
+
+  Widget _sliderRow(String label, double value, ValueChanged<double> onChanged) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('$label: ${value.round()} / 5'),
+        Slider(value: value, min: 1, max: 5, divisions: 4, onChanged: onChanged),
+      ],
     );
   }
 }

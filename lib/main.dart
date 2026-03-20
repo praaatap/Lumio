@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'screens/ai_chat_screen.dart';
 import 'screens/alarm_ring_screen.dart';
@@ -17,6 +18,12 @@ import 'services/storage_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  try {
+    await dotenv.load(fileName: '.env');
+  } catch (_) {
+    // Optional for local/device configuration.
+    debugPrint('No .env file found, proceeding without it.');
+  }
   await StorageService.init();
   await AlarmService.init();
   AlarmRingFlow.bindNativeAlarmEvents();

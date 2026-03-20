@@ -11,6 +11,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/alarm_model.dart';
 import 'ai_service.dart';
+import 'smart_alarm_service.dart';
 import 'storage_service.dart';
 
 class AlarmService {
@@ -66,11 +67,12 @@ class AlarmService {
 
     final targetTime = alarm.nextDateTimeFrom(DateTime.now());
     final alarmId = alarmIntId(alarm.id);
+    final selectedSound = SmartAlarmService.rotateSoundForDate(targetTime, alarm.sound);
 
     final settings = AlarmSettings(
       id: alarmId,
       dateTime: targetTime,
-      assetAudioPath: alarm.sound == 'default' ? null : alarm.sound,
+      assetAudioPath: selectedSound == 'default' ? null : selectedSound,
       volumeSettings:  VolumeSettings.fade(
         fadeDuration: Duration(seconds: 8),
       ),
@@ -110,6 +112,28 @@ class AlarmService {
           ? DateTimeComponents.time
           : null,
     );
+
+    final windDownMinutes = await SmartAlarmService.getWindDownMinutes();
+    final windDownTime = targetTime.subtract(Duration(minutes: windDownMinutes));
+    if (windDownTime.isAfter(DateTime.now())) {
+      await _notifications.zonedSchedule(
+        alarmId + 900000,
+        'Wind-down reminder',
+        'Alarm in $windDownMinutes min. ${SmartAlarmService.windDownChecklist().join(' • ')}',
+        tz.TZDateTime.from(windDownTime, location),
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'flowmind_winddown',
+            'FlowMind Wind-down',
+            channelDescription: 'Pre-alarm sleep prep reminders',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+    }
 
     await saveAlarm(alarm.copyWith(isEnabled: true));
   }
@@ -151,6 +175,22 @@ class AlarmService {
     return AiService().getDailyAlarmChoices(
       dayOfWeek: dayOfWeek,
       routine: routine,
+    );
+  }
+
+  static Future<List<WeeklyAlarmPlanItem>> generateWeeklyAlarmPlan({
+    required String routine,
+    required String meetings,
+    required bool gymDays,
+    required int commuteMinutes,
+    required int sleepDebtMinutes,
+  }) async {
+    return AiService().generateWeeklyAlarmPlan(
+      routine: routine,
+      meetings: meetings,
+      gymDays: gymDays,
+      commuteMinutes: commuteMinutes,
+      sleepDebtMinutes: sleepDebtMinutes,
     );
   }
 
@@ -198,5 +238,39 @@ class AlarmService {
       }
     }
     return null;
+  }
+
+  static Future<bool> autoAdjustNextAlarmFromMood({
+    required int energy,
+    required int sleepQuality,
+  }) async {
+    final alarms = getAllAlarms().where((alarm) => alarm.isEnabled).toList();
+    if (alarms.isEmpty) {
+      return false;
+    }
+
+    alarms.sort((a, b) => a.nextDateTimeFrom(DateTime.now()).compareTo(b.nextDateTimeFrom(DateTime.now())));
+    final target = alarms.first;
+
+    var deltaMinutes = 0;
+    if (sleepQuality <= 2 || energy <= 2) {
+      deltaMinutes = 15;
+    } else if (sleepQuality >= 4 && energy >= 4) {
+      deltaMinutes = -10;
+    }
+
+    if (deltaMinutes == 0) {
+      return false;
+    }
+
+    final current = (target.time.hour * 60) + target.time.minute;
+    final shifted = (current + deltaMinutes).clamp(0, (24 * 60) - 1);
+    final updated = target.copyWith(
+      time: TimeOfDay(hour: shifted ~/ 60, minute: shifted % 60),
+      aiTag: 'Auto-adjusted from mood + sleep check-in',
+    );
+
+    await scheduleAlarm(updated);
+    return true;
   }
 }

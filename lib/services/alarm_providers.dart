@@ -28,6 +28,37 @@ class DailyAlarmChoicesRequest {
   int get hashCode => Object.hash(dayOfWeek, routine);
 }
 
+class WeeklyPlannerRequest {
+  const WeeklyPlannerRequest({
+    required this.routine,
+    required this.meetings,
+    required this.gymDays,
+    required this.commuteMinutes,
+    required this.sleepDebtMinutes,
+  });
+
+  final String routine;
+  final String meetings;
+  final bool gymDays;
+  final int commuteMinutes;
+  final int sleepDebtMinutes;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is WeeklyPlannerRequest &&
+        other.routine == routine &&
+        other.meetings == meetings &&
+        other.gymDays == gymDays &&
+        other.commuteMinutes == commuteMinutes &&
+        other.sleepDebtMinutes == sleepDebtMinutes;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(routine, meetings, gymDays, commuteMinutes, sleepDebtMinutes);
+}
+
 /// Provider for the current tab index
 final currentTabIndexProvider = StateProvider<int>((ref) => 0);
 
@@ -213,6 +244,22 @@ final dailyAlarmChoicesProvider =
     ).timeout(
       const Duration(seconds: 12),
       onTimeout: () => throw TimeoutException('Daily alarm choices timed out'),
+    );
+  },
+);
+
+final weeklyPlannerProvider =
+    FutureProvider.family<List<WeeklyAlarmPlanItem>, WeeklyPlannerRequest>(
+  (ref, request) async {
+    return AlarmService.generateWeeklyAlarmPlan(
+      routine: request.routine,
+      meetings: request.meetings,
+      gymDays: request.gymDays,
+      commuteMinutes: request.commuteMinutes,
+      sleepDebtMinutes: request.sleepDebtMinutes,
+    ).timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => throw TimeoutException('Weekly planner timed out'),
     );
   },
 );

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/alarm_model.dart';
 import '../services/alarm_providers.dart';
+import '../services/smart_alarm_service.dart';
 
 class InsightsScreen extends ConsumerWidget {
   const InsightsScreen({super.key});
@@ -131,6 +132,29 @@ class InsightsScreen extends ConsumerWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 14),
+                    FutureBuilder<AlarmStats>(
+                      future: SmartAlarmService.getStats(),
+                      builder: (context, snapshot) {
+                        final stats = snapshot.data;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(color: const Color(0xFFE2E8F0)),
+                          ),
+                          child: Text(
+                            stats == null
+                                ? 'Loading wake behavior metrics...'
+                                : 'Streak ${stats.currentStreak} days · Best ${stats.bestStreak} · Snooze ${stats.snoozeCount} · Missed ${stats.missedCount}',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),
