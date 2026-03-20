@@ -6,11 +6,13 @@ import '../models/alarm_model.dart';
 class StorageService {
   static const String _settingsKey = 'flowmind_settings';
   static const String _alarmsKey = 'flowmind_alarms';
+  
+  static late final Box _alarmsBox;
 
   static Future<void> init() async {
     await Hive.initFlutter();
-    await Hive.openBox(_settingsKey);
-    await Hive.openBox(_alarmsKey);
+    await Hive.openBox(_settingsKey); // Settings cached via SharedPreferences
+    _alarmsBox = await Hive.openBox(_alarmsKey);
   }
 
   static Future<void> saveString(String key, String value) async {
@@ -22,8 +24,6 @@ class StorageService {
     final preferences = await SharedPreferences.getInstance();
     return preferences.getString(key);
   }
-
-  static Box get _alarmsBox => Hive.box(_alarmsKey);
 
   static List<AlarmModel> getAllAlarms() {
     return _alarmsBox.values

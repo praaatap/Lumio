@@ -1,16 +1,37 @@
-# lumio
+# Lumio
 
-A new Flutter project.
+Lumio is a Flutter alarm and focus app with AI-assisted alarm suggestions.
 
-## Getting Started
+## AI Setup
 
-This project is a starting point for a Flutter application.
+The app supports two AI paths:
 
-A few resources to get you started if this is your first Flutter project:
+- Gemini direct calls (existing features):
+	- `GEMINI_API_KEY`
+- Genkit remote flow for Groq daily alarm choices:
+	- `GENKIT_GROQ_DAILY_ALARM_FLOW_URL`
+	- `GROQ_MODEL` (optional, default: `llama-3.1-8b-instant`)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+Example run command:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```bash
+flutter run \
+	--dart-define=GEMINI_API_KEY=your_gemini_key \
+	--dart-define=GENKIT_GROQ_DAILY_ALARM_FLOW_URL=https://your-genkit-host/dailyAlarmChoices \
+	--dart-define=GROQ_MODEL=llama-3.1-8b-instant
+```
+
+The `GENKIT_GROQ_DAILY_ALARM_FLOW_URL` endpoint should be a Genkit flow that:
+
+1. Accepts a JSON string payload with day and routine context.
+2. Calls Groq with a Llama Instant model.
+3. Returns JSON with alarm options, for example:
+
+```json
+{
+	"choices": [
+		{"time":"06:30","label":"Focus Start","aiTag":"Early deep-work wake"},
+		{"time":"07:00","label":"Balanced Start","aiTag":"Commute-friendly wake"}
+	]
+}
+```

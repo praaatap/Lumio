@@ -1,16 +1,20 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../services/app_state.dart';
+import '../services/alarm_providers.dart';
+import '../services/ai_service.dart';
+import '../utils/debouncer.dart';
 import '../widgets/alarm_card.dart';
 
-class AlarmsScreen extends StatelessWidget {
+class AlarmsScreen extends ConsumerWidget {
   const AlarmsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alarmsAsync = ref.watch(alarmsListProvider);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -24,26 +28,30 @@ class AlarmsScreen extends StatelessWidget {
         ),
         actions: [
           IconButton(
-            onPressed: () => _showAddAlarmSheet(context),
+            onPressed: () => _showAddAlarmSheet(context, ref),
             icon: const Icon(Icons.add, size: 30),
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
-        children: [
-          ...appState.alarms.map(
-            (alarm) => AlarmCard(
-              alarm: alarm,
-              onToggle: (enabled) {
-                appState.toggleAlarm(alarm.id, enabled);
-              },
+      body: alarmsAsync.when(
+        data: (alarms) => ListView(
+          padding: const EdgeInsets.fromLTRB(22, 8, 22, 24),
+          children: [
+            ...alarms.map(
+              (alarm) => AlarmCard(
+                alarm: alarm,
+                onToggle: (enabled) {
+                  ref.read(alarmsMapProvider.notifier).toggleAlarm(alarm.id, enabled);
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, stack) => Center(child: Text('Error: $err')),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddAlarmSheet(context),
+        onPressed: () => _showAddAlarmSheet(context, ref),
         backgroundColor: const Color(0xFF0F172A),
         foregroundColor: Colors.white,
         icon: const Icon(Icons.alarm_add_rounded),
@@ -52,25 +60,27 @@ class AlarmsScreen extends StatelessWidget {
     );
   }
 
-  void _showAddAlarmSheet(BuildContext context) {
+  void _showAddAlarmSheet(BuildContext context, WidgetRef ref) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => const _AddAlarmSheet(),
+      builder: (context) => _AddAlarmSheet(ref: ref),
     );
   }
 }
 
-class _AddAlarmSheet extends StatefulWidget {
-  const _AddAlarmSheet();
+class _AddAlarmSheet extends ConsumerStatefulWidget {
+  const _AddAlarmSheet({required this.ref});
+  final WidgetRef ref;
 
   @override
-  State<_AddAlarmSheet> createState() => _AddAlarmSheetState();
+  ConsumerState<_AddAlarmSheet> createState() => _AddAlarmSheetState();
 }
 
-class _AddAlarmSheetState extends State<_AddAlarmSheet> {
+class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   final TextEditingController _labelController = TextEditingController();
+  late final Debouncer _aiDebouncer;
 
   int _hour = 7;
   int _minute = 30;
@@ -80,9 +90,22 @@ class _AddAlarmSheetState extends State<_AddAlarmSheet> {
   String _sound = 'default';
   final Set<int> _repeatDays = {2, 3, 4, 5, 6};
 
+  bool _loadingAI = false;
+  String? _aiError;
+  bool _loadingDailyChoices = false;
+  String? _dailyChoicesError;
+  List<AiAlarmChoice> _dailyChoices = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _aiDebouncer = Debouncer(delay: const Duration(milliseconds: 800));
+  }
+
   @override
   void dispose() {
     _labelController.dispose();
+    _aiDebouncer.dispose();
     super.dispose();
   }
 
@@ -229,22 +252,102 @@ class _AddAlarmSheetState extends State<_AddAlarmSheet> {
                             ),
                           ),
                           Text(
-                            _aiTag,
+                            _aiError ?? _aiTag,
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: const Color(0xFF94A3B8),
+                              color: _aiError != null
+                                  ? Colors.red
+                                  : const Color(0xFF94A3B8),
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
                     IconButton(
-                      onPressed: _getAiSuggestion,
+                      onPressed: _loadingAI ? null : _getAiSuggestion,
                       style: IconButton.styleFrom(backgroundColor: Colors.black),
-                      icon: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                      icon: _loadingAI
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.arrow_forward_rounded, color: Colors.white),
                     ),
                   ],
                 ),
               ).animate().fadeIn(duration: 260.ms),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.model_training_outlined, size: 24),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'GENKIT + GROQ DAILY CHOICES',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: const Color(0xFF111827),
+                                ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _loadingDailyChoices ? null : _getDailyChoices,
+                          child: _loadingDailyChoices
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Text('Generate'),
+                        ),
+                      ],
+                    ),
+                    if (_dailyChoicesError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          _dailyChoicesError!,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: Colors.red,
+                                letterSpacing: 0,
+                              ),
+                        ),
+                      ),
+                    if (_dailyChoices.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _dailyChoices
+                              .map(
+                                (choice) => ActionChip(
+                                  label: Text(
+                                    '${_formatHour(choice.hour24)}:${choice.minute.toString().padLeft(2, '0')} ${choice.hour24 >= 12 ? 'PM' : 'AM'} · ${choice.label}',
+                                  ),
+                                  onPressed: () => _applyDailyChoice(choice),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -289,6 +392,38 @@ class _AddAlarmSheetState extends State<_AddAlarmSheet> {
         ),
       ),
     );
+  }
+
+  int _targetDayForPrompt() {
+    if (_repeatDays.isEmpty) {
+      return DateTime.now().weekday;
+    }
+    final days = _repeatDays.toList()..sort();
+    return days.first;
+  }
+
+  String _routinePrompt() {
+    final label = _labelController.text.trim();
+    if (label.isEmpty) {
+      return 'Work routine with healthy wake up and commute buffer';
+    }
+    return label;
+  }
+
+  int _formatHour(int hour24) {
+    final normalized = hour24 % 12;
+    return normalized == 0 ? 12 : normalized;
+  }
+
+  void _applyDailyChoice(AiAlarmChoice choice) {
+    setState(() {
+      _hour = _formatHour(choice.hour24);
+      _minute = choice.minute;
+      _isAm = choice.hour24 < 12;
+      _labelController.text = choice.label;
+      _aiTag = choice.aiTag;
+      _aiError = null;
+    });
   }
 
   Widget _buildTimePicker(BuildContext context) {
@@ -377,41 +512,109 @@ class _AddAlarmSheetState extends State<_AddAlarmSheet> {
   }
 
   Future<void> _getAiSuggestion() async {
-    final appState = context.read<AppState>();
-    final suggestion = await appState.getAISuggestion(
-      _labelController.text.trim().isEmpty
-          ? 'Morning work routine and commute'
-          : _labelController.text.trim(),
-    );
+    _aiDebouncer.call(() async {
+      if (!mounted) return;
 
-    if (!mounted) {
-      return;
-    }
+      setState(() {
+        _loadingAI = true;
+        _aiError = null;
+      });
 
-    setState(() {
-      _aiTag = suggestion;
+      try {
+        final suggestion = await ref.read(aiSuggestionProvider(
+          _labelController.text.trim().isEmpty
+              ? 'Morning work routine and commute'
+              : _labelController.text.trim(),
+        ).future);
+
+        if (!mounted) return;
+
+        setState(() {
+          _aiTag = suggestion;
+          _loadingAI = false;
+          _aiError = null;
+        });
+      } catch (e) {
+        if (!mounted) return;
+
+        debugPrint('Error getting AI suggestion: $e');
+        setState(() {
+          _loadingAI = false;
+          _aiError = e is TimeoutException
+              ? 'AI suggestion timed out'
+              : 'Failed to get suggestion';
+        });
+      }
     });
   }
 
-  Future<void> _saveAlarm() async {
-    final appState = context.read<AppState>();
-    final hour24 = _isAm ? (_hour % 12) : (_hour % 12) + 12;
+  Future<void> _getDailyChoices() async {
+    if (!mounted) return;
 
-    await appState.addAlarm(
-      time: TimeOfDay(hour: hour24, minute: _minute),
-      label: _labelController.text.trim().isEmpty
-          ? 'Work Morning'
-          : _labelController.text.trim(),
-      repeatDays: _repeatDays.toList()..sort(),
-      isEnabled: _setAlarm,
-      aiTag: _aiTag,
-      sound: _sound,
-    );
+    setState(() {
+      _loadingDailyChoices = true;
+      _dailyChoicesError = null;
+    });
 
-    if (!mounted) {
-      return;
+    try {
+      final choices = await ref.read(
+        dailyAlarmChoicesProvider(
+          DailyAlarmChoicesRequest(
+            dayOfWeek: _targetDayForPrompt(),
+            routine: _routinePrompt(),
+          ),
+        ).future,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _loadingDailyChoices = false;
+        _dailyChoices = choices;
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingDailyChoices = false;
+        _dailyChoicesError = e is TimeoutException
+            ? 'Daily AI choices timed out'
+            : 'Could not load daily choices';
+      });
     }
+  }
 
-    Navigator.pop(context);
+  Future<void> _saveAlarm() async {
+    try {
+      final hour24 = _isAm ? (_hour % 12) : (_hour % 12) + 12;
+
+      await ref.read(alarmsMapProvider.notifier).addAlarm(
+        time: TimeOfDay(hour: hour24, minute: _minute),
+        label: _labelController.text.trim().isEmpty
+            ? 'Work Morning'
+            : _labelController.text.trim(),
+        repeatDays: _repeatDays.toList()..sort(),
+        isEnabled: _setAlarm,
+        aiTag: _aiTag,
+        sound: _sound,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('Error saving alarm: $e');
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save alarm: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 }

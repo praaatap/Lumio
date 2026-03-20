@@ -34,10 +34,14 @@ class AlarmModel {
     if (repeatDays.length == 7) {
       return 'Daily';
     }
-    if (repeatDays.join(',') == '1,2,3,4,5') {
+    // Use Set equality for order-independent comparison
+    final weekdays = {1, 2, 3, 4, 5};
+    final weekends = {6, 7};
+    
+    if (repeatDays.toSet() == weekdays) {
       return 'Weekdays';
     }
-    if (repeatDays.join(',') == '6,7') {
+    if (repeatDays.toSet() == weekends) {
       return 'Weekends';
     }
     return 'Custom';
@@ -83,16 +87,28 @@ class AlarmModel {
   }
 
   factory AlarmModel.fromMap(Map<dynamic, dynamic> map) {
+    // Safely parse repeat days with type validation
     final rawDays = (map['repeatDays'] as List<dynamic>? ?? const <dynamic>[])
-        .map((item) => item is int ? item : int.parse(item.toString()))
+        .map((item) {
+          if (item is int) return item;
+          if (item is String) return int.tryParse(item) ?? 0;
+          return 0;
+        })
+        .where((day) => day > 0) // Filter out invalid values
         .toList();
 
+    // Extract and validate core fields
+    final id = map['id'] as String?;
+    final hour = map['hour'] as int?;
+    final minute = map['minute'] as int?;
+    
+    if (id == null || hour == null || minute == null) {
+      throw FormatException('Missing required alarm fields: id=$id, hour=$hour, minute=$minute');
+    }
+
     return AlarmModel(
-      id: map['id'] as String,
-      time: TimeOfDay(
-        hour: map['hour'] as int,
-        minute: map['minute'] as int,
-      ),
+      id: id,
+      time: TimeOfDay(hour: hour, minute: minute),
       label: (map['label'] as String?) ?? '',
       repeatDays: rawDays,
       isEnabled: (map['isEnabled'] as bool?) ?? true,

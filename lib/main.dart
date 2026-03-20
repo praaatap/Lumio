@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 
 import 'screens/ai_chat_screen.dart';
 import 'screens/alarm_ring_screen.dart';
@@ -10,15 +10,16 @@ import 'screens/home_screen.dart';
 import 'screens/insights_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/splash_screen.dart';
+import 'services/alarm_providers.dart';
 import 'services/alarm_service.dart';
 import 'services/alarm_ring_flow.dart';
-import 'services/app_state.dart';
 import 'services/storage_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await StorageService.init();
   await AlarmService.init();
+  AlarmRingFlow.bindNativeAlarmEvents();
   runApp(const FlowMindApp());
 }
 
@@ -29,8 +30,7 @@ class FlowMindApp extends StatelessWidget {
   Widget build(BuildContext context) {
     final baseTextTheme = GoogleFonts.dmSansTextTheme();
 
-    return ChangeNotifierProvider(
-      create: (_) => AppState()..loadAlarms(),
+    return ProviderScope(
       child: MaterialApp(
         navigatorKey: appNavigatorKey,
         title: 'FlowMind',
@@ -93,12 +93,12 @@ class FlowMindApp extends StatelessWidget {
   }
 }
 
-class MainScaffold extends StatelessWidget {
+class MainScaffold extends ConsumerWidget {
   const MainScaffold({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentTabIndex = ref.watch(currentTabIndexProvider);
 
     final pages = <Widget>[
       const HomeScreen(),
@@ -107,13 +107,15 @@ class MainScaffold extends StatelessWidget {
     ];
 
     return Scaffold(
-      body: pages[appState.currentTabIndex].animate().fadeIn(
+      body: pages[currentTabIndex].animate().fadeIn(
         duration: 280.ms,
         curve: Curves.easeOut,
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: appState.currentTabIndex,
-        onTap: appState.setCurrentTab,
+        currentIndex: currentTabIndex,
+        onTap: (index) {
+          ref.read(currentTabIndexProvider.notifier).state = index;
+        },
         selectedItemColor: const Color(0xFF0F172A),
         unselectedItemColor: const Color(0xFF94A3B8),
         selectedLabelStyle: GoogleFonts.dmSans(

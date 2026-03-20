@@ -1,4 +1,6 @@
-import 'package:audioplayers/audioplayers.dart';
+import 'dart:async';
+
+import 'package:alarm/alarm.dart';
 import 'package:flutter/material.dart';
 import 'package:vibration/vibration.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -9,20 +11,34 @@ import 'alarm_service.dart';
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
 class AlarmRingFlow {
-  static final AudioPlayer _player = AudioPlayer();
+  static StreamSubscription<dynamic>? _ringSubscription;
+  static bool _ringScreenVisible = false;
+  static final Set<int> _knownRingingIds = <int>{};
+
+  static void bindNativeAlarmEvents() {
+    _ringSubscription ??= Alarm.ringing.listen((ringingSet) {
+      final ids = ringingSet.alarms.map((alarm) => alarm.id).toSet();
+      final newIds = ids.difference(_knownRingingIds);
+
+      for (final id in newIds) {
+        onAlarmRing(id);
+      }
+
+      _knownRingingIds
+        ..clear()
+        ..addAll(ids);
+
+      if (ids.isEmpty) {
+        _ringScreenVisible = false;
+      }
+    });
+  }
 
   static Future<void> onAlarmRing(int alarmId) async {
     await WakelockPlus.enable();
 
     try {
-      await _player.setReleaseMode(ReleaseMode.loop);
-      await _player.play(AssetSource('alarm.mp3'));
-    } catch (_) {
-      // Audio asset is optional during development.
-    }
-
-    try {
-      final hasVibrator = await Vibration.hasVibrator() ?? false;
+      final hasVibrator = await Vibration.hasVibrator();
       if (hasVibrator) {
         await Vibration.vibrate(pattern: [500, 1000], repeat: 0);
       }
@@ -31,7 +47,8 @@ class AlarmRingFlow {
     }
 
     final navigator = appNavigatorKey.currentState;
-    if (navigator != null) {
+    if (navigator != null && !_ringScreenVisible) {
+      _ringScreenVisible = true;
       navigator.pushNamed(AlarmRingScreen.routeName, arguments: alarmId);
     }
   }
@@ -54,6 +71,7 @@ class AlarmRingFlow {
     await _stopEffects();
 
     appNavigatorKey.currentState?.pop();
+    _ringScreenVisible = false;
   }
 
   static Future<void> stopAlarm(int alarmId) async {
@@ -72,10 +90,10 @@ class AlarmRingFlow {
 
     await _stopEffects();
     appNavigatorKey.currentState?.pop();
+    _ringScreenVisible = false;
   }
 
   static Future<void> _stopEffects() async {
-    await _player.stop();
     await Vibration.cancel();
     await WakelockPlus.disable();
   }

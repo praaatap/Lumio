@@ -18,9 +18,13 @@ class AlarmService {
       FlutterLocalNotificationsPlugin();
   static final Uuid _uuid = const Uuid();
 
+  static bool get _supportsNativeAlarmOps => !kIsWeb;
+
   static Future<void> init() async {
     tz_data.initializeTimeZones();
-    await Alarm.init();
+    if (_supportsNativeAlarmOps) {
+      await Alarm.init();
+    }
 
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       await AndroidAlarmManager.initialize();
@@ -39,6 +43,10 @@ class AlarmService {
   }
 
   static Future<void> requestPermissions() async {
+    if (kIsWeb) {
+      return;
+    }
+
     await Permission.notification.request();
 
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
@@ -51,6 +59,11 @@ class AlarmService {
   }
 
   static Future<void> scheduleAlarm(AlarmModel alarm) async {
+    if (!_supportsNativeAlarmOps) {
+      await saveAlarm(alarm.copyWith(isEnabled: true));
+      return;
+    }
+
     final targetTime = alarm.nextDateTimeFrom(DateTime.now());
     final alarmId = alarmIntId(alarm.id);
 
@@ -102,13 +115,17 @@ class AlarmService {
   }
 
   static Future<void> cancelAlarm(String id) async {
+    if (!_supportsNativeAlarmOps) {
+      return;
+    }
+
     final alarmId = alarmIntId(id);
     await Alarm.stop(alarmId);
     await _notifications.cancel(alarmId);
   }
 
   static Future<void> toggleAlarm(String id, bool on) async {
-    final alarm = await StorageService.getAlarm(id);
+    final alarm = StorageService.getAlarm(id);
     if (alarm == null) {
       return;
     }
@@ -125,6 +142,16 @@ class AlarmService {
 
   static Future<String> getAISuggestion(String routine) async {
     return AiService().getAISuggestion(routine);
+  }
+
+  static Future<List<AiAlarmChoice>> getDailyAlarmChoices({
+    required int dayOfWeek,
+    required String routine,
+  }) async {
+    return AiService().getDailyAlarmChoices(
+      dayOfWeek: dayOfWeek,
+      routine: routine,
+    );
   }
 
   static List<AlarmModel> getAllAlarms() {

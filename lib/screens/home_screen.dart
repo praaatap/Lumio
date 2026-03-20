@@ -1,24 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../services/app_state.dart';
+import '../services/alarm_providers.dart';
 import '../widgets/alarm_card.dart';
 import '../widgets/ai_chip.dart';
 import 'ai_chat_screen.dart';
 import 'alarms_screen.dart';
 import 'focus_timer_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
-    final alarms = appState.alarms;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alarmsAsync = ref.watch(alarmsListProvider);
 
     return SafeArea(
-      child: ListView(
+      child: alarmsAsync.when(
+        data: (alarms) => ListView(
         padding: const EdgeInsets.fromLTRB(22, 14, 22, 30),
         children:
             [
@@ -119,7 +119,7 @@ class HomeScreen extends StatelessWidget {
                         (alarm) => AlarmCard(
                           alarm: alarm,
                           onToggle: (value) =>
-                              appState.toggleAlarm(alarm.id, value),
+                              ref.read(alarmsMapProvider.notifier).toggleAlarm(alarm.id, value),
                         ),
                       ),
                   Container(
@@ -206,6 +206,9 @@ class HomeScreen extends StatelessWidget {
                 .animate(interval: 70.ms)
                 .fadeIn(duration: 240.ms)
                 .move(begin: const Offset(0, 8), end: Offset.zero),
+        ),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (err, stack) => Center(child: Text('Error: $err')),
       ),
     );
   }

@@ -1,16 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../services/app_state.dart';
+import '../services/alarm_providers.dart';
 import 'ai_chat_screen.dart';
 import 'alarm_ring_screen.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final vibrationEnabled = ref.watch(vibrationEnabledProvider);
+    final aiSuggestionsEnabled = ref.watch(aiSuggestionsEnabledProvider);
+    final themeDark = ref.watch(themeDarkProvider);
 
     return SafeArea(
       child: ListView(
@@ -28,8 +30,8 @@ class SettingsScreen extends StatelessWidget {
             title: 'Vibration',
             subtitle: 'Use vibration on alarm ring',
             trailing: Switch(
-              value: appState.vibrationEnabled,
-              onChanged: appState.setVibration,
+              value: vibrationEnabled,
+              onChanged: (value) => ref.read(vibrationEnabledProvider.notifier).state = value,
               activeTrackColor: const Color(0xFF22C55E),
               activeColor: Colors.white,
               inactiveTrackColor: const Color(0xFFE2E8F0),
@@ -39,8 +41,8 @@ class SettingsScreen extends StatelessWidget {
             title: 'AI Suggestions',
             subtitle: 'Smart label and schedule hints',
             trailing: Switch(
-              value: appState.aiSuggestionsEnabled,
-              onChanged: appState.setAiSuggestions,
+              value: aiSuggestionsEnabled,
+              onChanged: (value) => ref.read(aiSuggestionsEnabledProvider.notifier).state = value,
               activeTrackColor: const Color(0xFF22C55E),
               activeColor: Colors.white,
               inactiveTrackColor: const Color(0xFFE2E8F0),
@@ -50,8 +52,8 @@ class SettingsScreen extends StatelessWidget {
             title: 'Theme Toggle',
             subtitle: 'Prepared for future dark mode',
             trailing: Switch(
-              value: appState.themeDark,
-              onChanged: appState.setDarkTheme,
+              value: themeDark,
+              onChanged: (value) => ref.read(themeDarkProvider.notifier).state = value,
               activeTrackColor: const Color(0xFF22C55E),
               activeColor: Colors.white,
               inactiveTrackColor: const Color(0xFFE2E8F0),

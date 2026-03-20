@@ -1,12 +1,100 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class AiChatScreen extends StatelessWidget {
+import '../services/ai_service.dart';
+import '../services/alarm_providers.dart';
+
+class AiChatScreen extends ConsumerStatefulWidget {
   const AiChatScreen({super.key});
 
   static const routeName = '/ai-chat';
 
   @override
+  ConsumerState<AiChatScreen> createState() => _AiChatScreenState();
+}
+
+class _AiChatScreenState extends ConsumerState<AiChatScreen> {
+  final TextEditingController _controller = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final AiService _aiService = AiService();
+  final List<_ChatEntry> _messages = <_ChatEntry>[
+    const _ChatEntry(
+      text: 'Hello. I am FlowMind. How may I assist your workflow today?',
+      isAi: true,
+    ),
+  ];
+
+  bool _isSending = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendMessage(String alarmContext) async {
+    final text = _controller.text.trim();
+    if (text.isEmpty || _isSending) {
+      return;
+    }
+
+    _controller.clear();
+    setState(() {
+      _messages.add(_ChatEntry(text: text, isAi: false));
+      _isSending = true;
+    });
+    _scrollToBottom();
+
+    final recentHistory = _messages
+        .take(_messages.length > 8 ? 8 : _messages.length)
+        .map((msg) => msg.isAi ? 'AI: ${msg.text}' : 'User: ${msg.text}')
+        .toList();
+
+    final reply = await _aiService.chatReply(
+      userMessage: text,
+      insightContext: alarmContext,
+      recentMessages: recentHistory,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _messages.add(_ChatEntry(text: reply, isAi: true));
+      _isSending = false;
+    });
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final alarmsAsync = ref.watch(alarmsListProvider);
+    final alarmContext = alarmsAsync.maybeWhen(
+      data: (alarms) {
+        final enabled = alarms.where((alarm) => alarm.isEnabled).length;
+        if (alarms.isEmpty) {
+          return 'No alarms configured yet.';
+        }
+        return 'Total alarms: ${alarms.length}, enabled alarms: $enabled.';
+      },
+      orElse: () => 'Alarm data is loading.',
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -31,40 +119,29 @@ class AiChatScreen extends StatelessWidget {
         children: [
           Expanded(
             child: ListView(
+              controller: _scrollController,
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-              children: const [
-                _SpeakerLabel('AI'),
-                _ChatBubble(
-                  text:
-                      'Hello. I am FlowMind. How may I assist your workflow today?',
-                  isAi: true,
+              children: [
+                ..._messages.map(
+                  (message) => Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (message.isAi) const _SpeakerLabel('AI'),
+                        _ChatBubble(text: message.text, isAi: message.isAi),
+                      ],
+                    ),
+                  ),
                 ),
-                SizedBox(height: 20),
-                _ChatBubble(
-                  text:
-                      'I need to outline a new project strategy for a minimal UI kit.',
-                  isAi: false,
-                ),
-                SizedBox(height: 20),
-                _SpeakerLabel('AI'),
-                _ChatBubble(
-                  text:
-                      'A minimal UI kit focuses on essential functional elements. Should we start with typography scale or core primitives?',
-                  isAi: true,
-                ),
-                SizedBox(height: 20),
-                _ChatBubble(
-                  text:
-                      'Let\'s begin with core primitives. I want everything to feel airy and precise.',
-                  isAi: false,
-                ),
-                SizedBox(height: 20),
-                _SpeakerLabel('AI'),
-                _ChatBubble(
-                  text:
-                      'Understood. For an airy feel, we should prioritize generous whitespace and thin stroke weights. I can generate a list of base components next.',
-                  isAi: true,
-                ),
+                if (_isSending)
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: EdgeInsets.only(left: 4),
+                      child: Text('AI is thinking...'),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -75,6 +152,8 @@ class AiChatScreen extends StatelessWidget {
               children: [
                 Expanded(
                   child: TextField(
+                    controller: _controller,
+                    onSubmitted: (_) => _sendMessage(alarmContext),
                     decoration: InputDecoration(
                       hintText: 'Type your message...',
                       hintStyle: Theme.of(context).textTheme.bodyMedium
@@ -101,7 +180,7 @@ class AiChatScreen extends StatelessWidget {
                 CircleAvatar(
                   backgroundColor: Colors.black,
                   child: IconButton(
-                    onPressed: () {},
+                    onPressed: _isSending ? null : () => _sendMessage(alarmContext),
                     icon: const Icon(
                       Icons.arrow_upward_rounded,
                       color: Colors.white,
@@ -124,6 +203,13 @@ class AiChatScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ChatEntry {
+  const _ChatEntry({required this.text, required this.isAi});
+
+  final String text;
+  final bool isAi;
 }
 
 class _SpeakerLabel extends StatelessWidget {
