@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      
+  workflow_dispatch:
 
 jobs:
   build:
@@ -12,37 +12,51 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 📥 Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ☕ Java setup
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
-          java-version: '17'
-          cache: 'gradle'
+          distribution: temurin
+          java-version: 17
+          cache: gradle
 
+      # 🐦 Flutter setup
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.0'
-          channel: 'stable'
+          flutter-version: 3.29.0
+          channel: stable
           cache: true
 
+      # 📦 Install dependencies
       - name: Install dependencies
         run: flutter pub get
 
-      # This fix prevents the "paging file/memory" error on the runner
+      # 🧠 Fix memory issues (IMPORTANT)
       - name: Configure Gradle Memory
         run: |
           echo "org.gradle.jvmargs=-Xmx2048m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8" >> android/gradle.properties
           echo "kotlin.daemon.jvm.options=-Xmx1024m" >> android/gradle.properties
+          echo "kotlin.incremental=false" >> android/gradle.properties
+          echo "org.gradle.workers.max=2" >> android/gradle.properties
 
+      # 🏗 Build APK
       - name: Build release APK
-        # No-codesign is used if you haven't set up keystores yet
         run: flutter build apk --release --no-tree-shake-icons
 
-      - name: Upload APK to release
+      # 📤 Upload as artifact (ALWAYS)
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      # 🚀 Upload to GitHub Release (ONLY when tag pushed)
+      - name: Upload APK to GitHub Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:

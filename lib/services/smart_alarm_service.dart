@@ -1,9 +1,12 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/alarm_model.dart';
 
 enum DismissChallengeType { none, math, memory, qr, steps }
 
@@ -51,11 +54,11 @@ class MoodCheckIn {
   final DateTime at;
 
   Map<String, dynamic> toMap() => {
-        'energy': energy,
-        'mood': mood,
-        'sleepQuality': sleepQuality,
-        'at': at.toIso8601String(),
-      };
+    'energy': energy,
+    'mood': mood,
+    'sleepQuality': sleepQuality,
+    'at': at.toIso8601String(),
+  };
 
   factory MoodCheckIn.fromMap(Map<String, dynamic> map) {
     return MoodCheckIn(
@@ -81,11 +84,82 @@ class ParsedQuickAlarm {
   final int dayOffset;
 }
 
+class TeenSleepProfile {
+  const TeenSleepProfile({
+    required this.age,
+    required this.targetSleepHours,
+    required this.windDownMinutes,
+  });
+
+  final int age;
+  final double targetSleepHours;
+  final int windDownMinutes;
+
+  Map<String, dynamic> toMap() => {
+    'age': age,
+    'targetSleepHours': targetSleepHours,
+    'windDownMinutes': windDownMinutes,
+  };
+
+  factory TeenSleepProfile.fromMap(Map<String, dynamic> map) {
+    return TeenSleepProfile(
+      age: ((map['age'] as num?)?.toInt() ?? 16).clamp(13, 19),
+      targetSleepHours: ((map['targetSleepHours'] as num?)?.toDouble() ?? 8.5)
+          .clamp(7.0, 10.0),
+      windDownMinutes: ((map['windDownMinutes'] as num?)?.toInt() ?? 30).clamp(
+        15,
+        60,
+      ),
+    );
+  }
+}
+
+class SleepCoachSnapshot {
+  const SleepCoachSnapshot({
+    required this.profile,
+    required this.recommendedSleepHours,
+    required this.sleepDebtMinutes,
+    required this.consistencyScore,
+    required this.headline,
+    required this.recommendation,
+    this.nextWakeDateTime,
+    this.suggestedBedtime,
+  });
+
+  final TeenSleepProfile profile;
+  final double recommendedSleepHours;
+  final int sleepDebtMinutes;
+  final int consistencyScore;
+  final String headline;
+  final String recommendation;
+  final DateTime? nextWakeDateTime;
+  final TimeOfDay? suggestedBedtime;
+}
+
+class PremiumSleepSnapshot {
+  const PremiumSleepSnapshot({
+    required this.weekdayAverageWakeMinutes,
+    required this.weekendAverageWakeMinutes,
+    required this.weekendDriftMinutes,
+    required this.recoveryIntensity,
+    required this.recoveryHeadline,
+    required this.recoveryActions,
+  });
+
+  final int? weekdayAverageWakeMinutes;
+  final int? weekendAverageWakeMinutes;
+  final int weekendDriftMinutes;
+  final String recoveryIntensity;
+  final String recoveryHeadline;
+  final List<String> recoveryActions;
+}
+
 class SmartAlarmService {
   static const _challengeKey = 'smart.dismiss.challenge';
   static const _windDownMinutesKey = 'smart.winddown.minutes';
   static const _statsKey = 'smart.alarm.stats';
   static const _moodKey = 'smart.mood.latest';
+  static const _teenSleepProfileKey = 'smart.sleep.profile';
 
   static Future<DismissChallengeType> getDismissChallenge() async {
     final prefs = await SharedPreferences.getInstance();
@@ -108,7 +182,13 @@ class SmartAlarmService {
 
   static Future<void> setWindDownMinutes(int minutes) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_windDownMinutesKey, minutes.clamp(15, 60));
+    final clamped = minutes.clamp(15, 60);
+    await prefs.setInt(_windDownMinutesKey, clamped);
+    final profile = await getTeenSleepProfile();
+    await prefs.setString(
+      _teenSleepProfileKey,
+      jsonEncode(profile.copyWith(windDownMinutes: clamped).toMap()),
+    );
   }
 
   static TimeOfDay suggestBedtime({
@@ -118,12 +198,180 @@ class SmartAlarmService {
     final wakeMinutes = (wakeTime.hour * 60) + wakeTime.minute;
     final sleepMinutes = (sleepHours * 60).round();
     final bedtimeMinutes = (wakeMinutes - sleepMinutes) % (24 * 60);
-    final positive = bedtimeMinutes < 0 ? bedtimeMinutes + (24 * 60) : bedtimeMinutes;
+    final positive = bedtimeMinutes < 0
+        ? bedtimeMinutes + (24 * 60)
+        : bedtimeMinutes;
     return TimeOfDay(hour: positive ~/ 60, minute: positive % 60);
   }
 
+  static double recommendedSleepHoursForTeen(int age) {
+    if (age <= 15) {
+      return 9.0;
+    }
+    if (age <= 17) {
+      return 8.75;
+    }
+    return 8.5;
+  }
+
+  static Future<TeenSleepProfile> getTeenSleepProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_teenSleepProfileKey);
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        return TeenSleepProfile.fromMap(
+          Map<String, dynamic>.from(jsonDecode(raw) as Map<String, dynamic>),
+        );
+      } catch (_) {
+        // Fall back to defaults below.
+      }
+    }
+
+    final windDown = prefs.getInt(_windDownMinutesKey) ?? 30;
+    return TeenSleepProfile(
+      age: 16,
+      targetSleepHours: recommendedSleepHoursForTeen(16),
+      windDownMinutes: windDown,
+    );
+  }
+
+  static Future<void> saveTeenSleepProfile({
+    int? age,
+    double? targetSleepHours,
+    int? windDownMinutes,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = await getTeenSleepProfile();
+    final next = current.copyWith(
+      age: age,
+      targetSleepHours: targetSleepHours,
+      windDownMinutes: windDownMinutes,
+    );
+    await prefs.setString(_teenSleepProfileKey, jsonEncode(next.toMap()));
+    await prefs.setInt(_windDownMinutesKey, next.windDownMinutes);
+  }
+
+  static Future<SleepCoachSnapshot> buildSleepCoachSnapshot(
+    List<AlarmModel> alarms,
+  ) async {
+    final profile = await getTeenSleepProfile();
+    final mood = await getLatestMoodCheckIn();
+    final enabled = alarms.where((alarm) => alarm.isEnabled).toList()
+      ..sort(
+        (a, b) => a
+            .nextDateTimeFrom(DateTime.now())
+            .compareTo(b.nextDateTimeFrom(DateTime.now())),
+      );
+
+    final nextWake = enabled.isEmpty
+        ? null
+        : enabled.first.nextDateTimeFrom(DateTime.now());
+    final targetSleepHours = profile.targetSleepHours;
+    final suggestedBedtime = nextWake == null
+        ? null
+        : suggestBedtime(
+            wakeTime: TimeOfDay(hour: nextWake.hour, minute: nextWake.minute),
+            sleepHours: targetSleepHours,
+          );
+
+    final recommended = recommendedSleepHoursForTeen(profile.age);
+    final targetDebt = ((recommended - targetSleepHours) * 60).round();
+    final moodDebt = mood == null
+        ? 0
+        : switch (mood.sleepQuality) {
+            <= 2 => 45,
+            3 => 20,
+            4 => 10,
+            _ => 0,
+          };
+    final sleepDebtMinutes = (targetDebt > 0 ? targetDebt : 0) + moodDebt;
+
+    final alarmMinuteValues = enabled
+        .map((alarm) => (alarm.time.hour * 60) + alarm.time.minute)
+        .toList();
+    final consistencyScore = _consistencyScore(alarmMinuteValues);
+
+    final bedtimeText = suggestedBedtime == null
+        ? 'Set a wake alarm to get a bedtime target.'
+        : 'Aim to be in bed by ${formatTimeOfDay(suggestedBedtime)}.';
+    final sleepDebtText = sleepDebtMinutes <= 0
+        ? 'Your sleep target is on track.'
+        : 'You are carrying about ${sleepDebtMinutes ~/ 60 > 0 ? '${sleepDebtMinutes ~/ 60}h ' : ''}${sleepDebtMinutes % 60}m of sleep debt.';
+    final recommendation = mood == null
+        ? '$bedtimeText Keep your wake time steady, even on weekends.'
+        : mood.sleepQuality <= 2
+        ? '$bedtimeText $sleepDebtText Cut screen time 30 minutes earlier tonight.'
+        : '$bedtimeText $sleepDebtText Protect the same bedtime for the next 3 nights.';
+
+    final headline = suggestedBedtime == null
+        ? 'Teen sleep coach is ready once you enable an alarm.'
+        : '${formatTimeOfDay(suggestedBedtime)} is your best bedtime for a ${targetSleepHours.toStringAsFixed(1)}h sleep goal.';
+
+    return SleepCoachSnapshot(
+      profile: profile,
+      recommendedSleepHours: recommended,
+      sleepDebtMinutes: sleepDebtMinutes,
+      consistencyScore: consistencyScore,
+      headline: headline,
+      recommendation: recommendation,
+      nextWakeDateTime: nextWake,
+      suggestedBedtime: suggestedBedtime,
+    );
+  }
+
+  static Future<PremiumSleepSnapshot> buildPremiumSleepSnapshot(
+    List<AlarmModel> alarms,
+  ) async {
+    final coach = await buildSleepCoachSnapshot(alarms);
+    final mood = await getLatestMoodCheckIn();
+    final weekdayWake = _averageWakeMinutes(alarms, const [1, 2, 3, 4, 5]);
+    final weekendWake = _averageWakeMinutes(alarms, const [6, 7]);
+    final drift = weekdayWake == null || weekendWake == null
+        ? 0
+        : weekendWake - weekdayWake;
+
+    final recoveryIntensity = switch (coach.sleepDebtMinutes) {
+      >= 90 => 'High',
+      >= 40 => 'Medium',
+      _ => 'Light',
+    };
+
+    final driftText = drift <= 0
+        ? 'Weekend wake time is stable.'
+        : 'Weekend drift is $drift min later than weekdays.';
+    final recoveryHeadline = mood != null && mood.sleepQuality <= 2
+        ? 'Recovery mode recommended tomorrow. $driftText'
+        : 'Sleep rhythm check: $driftText';
+
+    final actions = <String>[
+      if (coach.suggestedBedtime != null)
+        'Start wind-down ${coach.profile.windDownMinutes} min before ${formatTimeOfDay(coach.suggestedBedtime!)}',
+      if (drift > 75)
+        'Pull weekend alarms earlier by 30-45 min to protect Monday energy',
+      if (coach.sleepDebtMinutes >= 40)
+        'Use a lighter first block tomorrow and avoid late caffeine',
+      if (mood != null && mood.energy <= 2)
+        'Keep the first task small and get sunlight within 30 minutes of waking',
+      if (actionsWouldBeEmptyPlaceholder(
+        coach: coach,
+        drift: drift,
+        mood: mood,
+      ))
+        'Your rhythm looks steady. Keep the same wake time for the next 3 days',
+    ];
+
+    return PremiumSleepSnapshot(
+      weekdayAverageWakeMinutes: weekdayWake,
+      weekendAverageWakeMinutes: weekendWake,
+      weekendDriftMinutes: drift,
+      recoveryIntensity: recoveryIntensity,
+      recoveryHeadline: recoveryHeadline,
+      recoveryActions: actions,
+    );
+  }
+
   static ({TimeOfDay time, List<int> repeatDays, String label, String aiTag})
-      defaultsForProfile(DayTypeProfile profile) {
+  defaultsForProfile(DayTypeProfile profile) {
     switch (profile) {
       case DayTypeProfile.gym:
         return (
@@ -171,8 +419,9 @@ class SmartAlarmService {
 
     var batteryIgnored = true;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      batteryIgnored = await Permission.ignoreBatteryOptimizations.status
-          .then((value) => value.isGranted);
+      batteryIgnored = await Permission.ignoreBatteryOptimizations.status.then(
+        (value) => value.isGranted,
+      );
     }
 
     return AlarmReliabilityStatus(
@@ -325,8 +574,8 @@ class SmartAlarmService {
     final label = lower.contains('gym')
         ? 'Gym Quick Add'
         : lower.contains('travel')
-            ? 'Travel Quick Add'
-            : 'Quick Add Alarm';
+        ? 'Travel Quick Add'
+        : 'Quick Add Alarm';
 
     return ParsedQuickAlarm(
       hour24: hour,
@@ -343,5 +592,84 @@ class SmartAlarmService {
       'No caffeine now',
       'Prep tomorrow task list',
     ];
+  }
+
+  static bool actionsWouldBeEmptyPlaceholder({
+    required SleepCoachSnapshot coach,
+    required int drift,
+    required MoodCheckIn? mood,
+  }) {
+    return coach.suggestedBedtime == null &&
+        drift <= 75 &&
+        coach.sleepDebtMinutes < 40 &&
+        (mood == null || mood.energy > 2);
+  }
+
+  static int? _averageWakeMinutes(
+    List<AlarmModel> alarms,
+    List<int> targetDays,
+  ) {
+    final matching = alarms.where((alarm) {
+      if (!alarm.isEnabled) {
+        return false;
+      }
+      if (alarm.repeatDays.isEmpty) {
+        final nextDay = alarm.nextDateTimeFrom(DateTime.now()).weekday;
+        return targetDays.contains(nextDay);
+      }
+      return alarm.repeatDays.any(targetDays.contains);
+    }).toList();
+
+    if (matching.isEmpty) {
+      return null;
+    }
+
+    final total = matching.fold<int>(
+      0,
+      (sum, alarm) => sum + (alarm.time.hour * 60) + alarm.time.minute,
+    );
+    return (total / matching.length).round();
+  }
+
+  static int _consistencyScore(List<int> minuteValues) {
+    if (minuteValues.length <= 1) {
+      return 92;
+    }
+
+    final mean =
+        minuteValues.reduce((a, b) => a + b) / minuteValues.length.toDouble();
+    final variance =
+        minuteValues.fold<double>(
+          0,
+          (sum, value) => sum + ((value - mean) * (value - mean)),
+        ) /
+        minuteValues.length.toDouble();
+    final deviationMinutes = math.sqrt(variance);
+    final score = 100 - (deviationMinutes * 0.9);
+    return score.round().clamp(45, 100);
+  }
+
+  static String formatTimeOfDay(TimeOfDay time) {
+    final hour12 = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour12:$minute $period';
+  }
+}
+
+extension on TeenSleepProfile {
+  TeenSleepProfile copyWith({
+    int? age,
+    double? targetSleepHours,
+    int? windDownMinutes,
+  }) {
+    return TeenSleepProfile(
+      age: (age ?? this.age).clamp(13, 19),
+      targetSleepHours: (targetSleepHours ?? this.targetSleepHours).clamp(
+        7.0,
+        10.0,
+      ),
+      windDownMinutes: (windDownMinutes ?? this.windDownMinutes).clamp(15, 60),
+    );
   }
 }

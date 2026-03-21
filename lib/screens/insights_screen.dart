@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/alarm_model.dart';
 import '../services/alarm_providers.dart';
+import '../services/premium_service.dart';
 import '../services/smart_alarm_service.dart';
 
 class InsightsScreen extends ConsumerWidget {
@@ -17,11 +18,19 @@ class InsightsScreen extends ConsumerWidget {
       child: alarmsAsync.when(
         data: (alarms) {
           final insightData = _buildInsightData(alarms);
-          final alarmsContext = _buildAlarmsContext(alarms, insightData.focusText);
-          final aiInsightAsync = ref.watch(aiSuggestionProvider(
-            'Rewrite this as one short productivity insight: ${insightData.focusText}. '
-            'Context: $alarmsContext',
-          ));
+          final alarmsContext = _buildAlarmsContext(
+            alarms,
+            insightData.focusText,
+          );
+          final aiInsightAsync = ref.watch(
+            aiSuggestionProvider(
+              'Rewrite this as one short productivity insight: ${insightData.focusText}. '
+              'Context: $alarmsContext',
+            ),
+          );
+          final sleepSnapshotFuture = SmartAlarmService.buildSleepCoachSnapshot(
+            alarms,
+          );
 
           return ListView(
             padding: const EdgeInsets.fromLTRB(22, 14, 22, 30),
@@ -34,7 +43,10 @@ class InsightsScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text('Insights', style: Theme.of(context).textTheme.headlineLarge),
+              Text(
+                'Insights',
+                style: Theme.of(context).textTheme.headlineLarge,
+              ),
               const SizedBox(height: 20),
               SizedBox(
                 height: 220,
@@ -65,9 +77,8 @@ class InsightsScreen extends ConsumerWidget {
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
                                 labels[index],
-                                style: Theme.of(
-                                  context,
-                                ).textTheme.bodySmall?.copyWith(letterSpacing: 1.8),
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(letterSpacing: 1.8),
                               ),
                             );
                           },
@@ -105,7 +116,10 @@ class InsightsScreen extends ConsumerWidget {
               _HeatMap(values: insightData.heatValues),
               const SizedBox(height: 24),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 18,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(24),
@@ -133,31 +147,79 @@ class InsightsScreen extends ConsumerWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 14),
-                    FutureBuilder<AlarmStats>(
-                      future: SmartAlarmService.getStats(),
-                      builder: (context, snapshot) {
-                        final stats = snapshot.data;
-                        return Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                          ),
-                          child: Text(
-                            stats == null
-                                ? 'Loading wake behavior metrics...'
-                                : 'Streak ${stats.currentStreak} days · Best ${stats.bestStreak} · Snooze ${stats.snoozeCount} · Missed ${stats.missedCount}',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                  fontWeight: FontWeight.w700,
-                                ),
-                          ),
-                        );
-                      },
-                    ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 14),
+              FutureBuilder<AlarmStats>(
+                future: SmartAlarmService.getStats(),
+                builder: (context, snapshot) {
+                  final stats = snapshot.data;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 18,
+                      vertical: 18,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Text(
+                      stats == null
+                          ? 'Loading wake behavior metrics...'
+                          : 'Streak ${stats.currentStreak} days · Best ${stats.bestStreak} · Snooze ${stats.snoozeCount} · Missed ${stats.missedCount}',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
+              FutureBuilder<SleepCoachSnapshot>(
+                future: sleepSnapshotFuture,
+                builder: (context, snapshot) {
+                  final coach = snapshot.data;
+                  return FutureBuilder<bool>(
+                    future: PremiumService.canUse(PremiumFeature.sleepCoachPro),
+                    builder: (context, premiumSnapshot) {
+                      final unlocked = premiumSnapshot.data ?? false;
+                      return FutureBuilder<PremiumSleepSnapshot>(
+                        future: SmartAlarmService.buildPremiumSleepSnapshot(
+                          alarms,
+                        ),
+                        builder: (context, premiumSleepSnapshot) {
+                          final premiumSleep = premiumSleepSnapshot.data;
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 18,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                            child: Text(
+                              unlocked
+                                  ? (premiumSleep == null
+                                        ? (coach == null
+                                              ? 'Building your sleep insight...'
+                                              : coach.headline)
+                                        : '${premiumSleep.recoveryHeadline} Recovery ${premiumSleep.recoveryIntensity} · Actions ${premiumSleep.recoveryActions.take(2).join(' · ')}')
+                                  : 'Sleep Coach Pro, recovery planner, and weekend drift guard are part of Lifetime Premium ₹299.',
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  );
+                },
               ),
             ],
           );
@@ -190,12 +252,18 @@ class InsightsScreen extends ConsumerWidget {
 
     final heatValues = List<int>.generate(28, (index) {
       final dayIndex = index % 7;
-      final intensity = maxCount == 0 ? 0 : (dayCounts[dayIndex] / maxCount) * 4;
+      final intensity = maxCount == 0
+          ? 0
+          : (dayCounts[dayIndex] / maxCount) * 4;
       return intensity.round().clamp(0, 4);
     });
 
     final focusText = _buildFocusText(enabledAlarms, dayCounts);
-    return _InsightData(bars: bars, heatValues: heatValues, focusText: focusText);
+    return _InsightData(
+      bars: bars,
+      heatValues: heatValues,
+      focusText: focusText,
+    );
   }
 
   String _buildFocusText(List<AlarmModel> alarms, List<double> dayCounts) {

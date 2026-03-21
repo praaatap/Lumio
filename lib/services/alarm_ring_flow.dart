@@ -55,27 +55,30 @@ class AlarmRingFlow {
     }
 
     _missedRecoveryTimers[alarmId]?.cancel();
-    _missedRecoveryTimers[alarmId] = Timer(const Duration(minutes: 2), () async {
-      final alarm = AlarmService.findByIntId(alarmId);
-      if (alarm == null) {
-        return;
-      }
+    _missedRecoveryTimers[alarmId] = Timer(
+      const Duration(minutes: 2),
+      () async {
+        final alarm = AlarmService.findByIntId(alarmId);
+        if (alarm == null) {
+          return;
+        }
 
-      final stillRinging = await Alarm.isRinging(alarmId);
-      if (!stillRinging) {
-        return;
-      }
+        final stillRinging = await Alarm.isRinging(alarmId);
+        if (!stillRinging) {
+          return;
+        }
 
-      await SmartAlarmService.recordMissed();
+        await SmartAlarmService.recordMissed();
 
-      final backupTime = DateTime.now().add(const Duration(minutes: 3));
-      final backup = alarm.copyWith(
-        time: TimeOfDay(hour: backupTime.hour, minute: backupTime.minute),
-        aiTag: 'Recovery backup alarm after missed ring',
-        isEnabled: true,
-      );
-      await AlarmService.scheduleAlarm(backup);
-    });
+        final backupTime = DateTime.now().add(const Duration(minutes: 3));
+        final backup = alarm.copyWith(
+          time: TimeOfDay(hour: backupTime.hour, minute: backupTime.minute),
+          aiTag: 'Recovery backup alarm after missed ring',
+          isEnabled: true,
+        );
+        await AlarmService.scheduleAlarm(backup);
+      },
+    );
   }
 
   static Future<void> snoozeAlarm(int alarmId) async {
@@ -92,7 +95,7 @@ class AlarmRingFlow {
       isEnabled: true,
     );
 
-    await AlarmService.scheduleAlarm(updated);
+    await AlarmService.scheduleAlarm(updated, persist: false);
     await SmartAlarmService.recordSnoozed();
     await _stopEffects();
 

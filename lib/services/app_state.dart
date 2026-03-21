@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../models/alarm_model.dart';
@@ -13,7 +12,7 @@ class AppState extends ChangeNotifier {
   bool _themeDark = false;
 
   int get currentTabIndex => _currentTabIndex;
-  
+
   /// Returns alarms sorted by time for UI display
   List<AlarmModel> get alarms {
     final sorted = _alarmsMap.values.toList();
@@ -24,7 +23,7 @@ class AppState extends ChangeNotifier {
     });
     return sorted;
   }
-  
+
   bool get vibrationEnabled => _vibrationEnabled;
   bool get aiSuggestionsEnabled => _aiSuggestionsEnabled;
   bool get themeDark => _themeDark;
@@ -129,7 +128,7 @@ class AppState extends ChangeNotifier {
         debugPrint('Cannot toggle: alarm $id not found');
         return;
       }
-      
+
       final updated = alarm.copyWith(isEnabled: on);
       await AlarmService.toggleAlarm(id, on);
       _alarmsMap[id] = updated;
@@ -143,7 +142,7 @@ class AppState extends ChangeNotifier {
   /// Cancel alarm and remove it
   Future<void> cancelAlarm(String id) async {
     try {
-      await AlarmService.cancelAlarm(id);
+      await AlarmService.deleteAlarm(id);
       _alarmsMap.remove(id);
       notifyListeners();
     } catch (e) {
@@ -160,7 +159,7 @@ class AppState extends ChangeNotifier {
         debugPrint('Cannot snooze: alarm $id not found');
         return;
       }
-      
+
       final snoozeTime = DateTime.now().add(const Duration(minutes: 5));
       final updated = alarm.copyWith(
         time: TimeOfDay(hour: snoozeTime.hour, minute: snoozeTime.minute),
@@ -181,7 +180,7 @@ class AppState extends ChangeNotifier {
         debugPrint('Cannot stop: alarm $id not found');
         return;
       }
-      
+
       await AlarmService.cancelAlarm(id);
 
       if (alarm.repeatDays.isNotEmpty) {

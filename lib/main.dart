@@ -26,6 +26,7 @@ Future<void> main() async {
   }
   await StorageService.init();
   await AlarmService.init();
+  await AlarmService.restoreEnabledAlarms();
   AlarmRingFlow.bindNativeAlarmEvents();
   runApp(const FlowMindApp());
 }

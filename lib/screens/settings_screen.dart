@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/alarm_providers.dart';
+import '../services/premium_service.dart';
 import '../services/smart_alarm_service.dart';
 import 'ai_chat_screen.dart';
 import 'alarm_ring_screen.dart';
@@ -21,6 +22,39 @@ class SettingsScreen extends ConsumerWidget {
         children: [
           Text('SETTINGS', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 16),
+          FutureBuilder<bool>(
+            future: PremiumService.isLifetimePremiumUnlocked(),
+            builder: (context, snapshot) {
+              final unlocked = snapshot.data ?? false;
+              return _SettingTile(
+                title: 'Lifetime Premium',
+                subtitle: unlocked
+                    ? 'Unlocked · AI planner, sleep coach pro, adaptive alarms'
+                    : '₹299 one-time · unlock pro planning and teen sleep features',
+                trailing: Icon(
+                  unlocked
+                      ? Icons.workspace_premium_rounded
+                      : Icons.lock_outline_rounded,
+                ),
+                onTap: () => _showPremiumDialog(context, unlocked),
+              );
+            },
+          ),
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Text(
+              'Premium bundle: ${PremiumService.bundleLabels().join(' · ')}',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
           _SettingTile(
             title: 'Sound',
             subtitle: 'Wake tone and ring volume',
@@ -32,9 +66,10 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: 'Use vibration on alarm ring',
             trailing: Switch(
               value: vibrationEnabled,
-              onChanged: (value) => ref.read(vibrationEnabledProvider.notifier).state = value,
+              onChanged: (value) =>
+                  ref.read(vibrationEnabledProvider.notifier).state = value,
               activeTrackColor: const Color(0xFF22C55E),
-              activeColor: Colors.white,
+              activeThumbColor: Colors.white,
               inactiveTrackColor: const Color(0xFFE2E8F0),
             ),
           ),
@@ -43,9 +78,10 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: 'Smart label and schedule hints',
             trailing: Switch(
               value: aiSuggestionsEnabled,
-              onChanged: (value) => ref.read(aiSuggestionsEnabledProvider.notifier).state = value,
+              onChanged: (value) =>
+                  ref.read(aiSuggestionsEnabledProvider.notifier).state = value,
               activeTrackColor: const Color(0xFF22C55E),
-              activeColor: Colors.white,
+              activeThumbColor: Colors.white,
               inactiveTrackColor: const Color(0xFFE2E8F0),
             ),
           ),
@@ -54,9 +90,10 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: 'Prepared for future dark mode',
             trailing: Switch(
               value: themeDark,
-              onChanged: (value) => ref.read(themeDarkProvider.notifier).state = value,
+              onChanged: (value) =>
+                  ref.read(themeDarkProvider.notifier).state = value,
               activeTrackColor: const Color(0xFF22C55E),
-              activeColor: Colors.white,
+              activeThumbColor: Colors.white,
               inactiveTrackColor: const Color(0xFFE2E8F0),
             ),
           ),
@@ -132,7 +169,36 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  void _showReliabilityDialog(BuildContext context, AlarmReliabilityStatus? status) {
+  Future<void> _showPremiumDialog(BuildContext context, bool unlocked) async {
+    if (unlocked) {
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Lifetime Premium'),
+          content: const Text(
+            'Lifetime premium is already unlocked on this device.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    await PremiumService.showLifetimePaywall(
+      context,
+      PremiumFeature.sleepCoachPro,
+    );
+  }
+
+  void _showReliabilityDialog(
+    BuildContext context,
+    AlarmReliabilityStatus? status,
+  ) {
     showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
@@ -143,9 +209,15 @@ class SettingsScreen extends ConsumerWidget {
           children: [
             Text('Scheduled alarms are managed with native exact mode.'),
             const SizedBox(height: 8),
-            Text('Notifications: ${status?.notificationsGranted == true ? 'Granted' : 'Missing'}'),
-            Text('Exact Alarm: ${status?.exactAlarmGranted == true ? 'Granted' : 'Missing'}'),
-            Text('Battery Optimization: ${status?.batteryOptimizationIgnored == true ? 'Ignored' : 'Active'}'),
+            Text(
+              'Notifications: ${status?.notificationsGranted == true ? 'Granted' : 'Missing'}',
+            ),
+            Text(
+              'Exact Alarm: ${status?.exactAlarmGranted == true ? 'Granted' : 'Missing'}',
+            ),
+            Text(
+              'Battery Optimization: ${status?.batteryOptimizationIgnored == true ? 'Ignored' : 'Active'}',
+            ),
           ],
         ),
         actions: [
@@ -158,24 +230,46 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
-  void _showChallengePicker(BuildContext context, DismissChallengeType current) {
+  void _showChallengePicker(
+    BuildContext context,
+    DismissChallengeType current,
+  ) {
     showModalBottomSheet<void>(
       context: context,
-      builder: (context) => ListView(
-        children: DismissChallengeType.values
-            .map(
-              (type) => ListTile(
+      builder: (context) => FutureBuilder<bool>(
+        future: PremiumService.canUse(PremiumFeature.smartDismissModes),
+        builder: (context, snapshot) {
+          final unlocked = snapshot.data ?? false;
+          return ListView(
+            children: DismissChallengeType.values.map((type) {
+              final needsPremium = type != DismissChallengeType.none;
+              return ListTile(
                 title: Text(type.name.toUpperCase()),
+                subtitle: needsPremium && !unlocked
+                    ? const Text('Premium')
+                    : null,
                 trailing: current == type ? const Icon(Icons.check) : null,
                 onTap: () async {
+                  if (needsPremium && !unlocked) {
+                    await PremiumService.showLifetimePaywall(
+                      context,
+                      PremiumFeature.smartDismissModes,
+                    );
+                    if (context.mounted) {
+                      Navigator.pop(context);
+                    }
+                    return;
+                  }
+
                   await SmartAlarmService.setDismissChallenge(type);
                   if (context.mounted) {
                     Navigator.pop(context);
                   }
                 },
-              ),
-            )
-            .toList(),
+              );
+            }).toList(),
+          );
+        },
       ),
     );
   }

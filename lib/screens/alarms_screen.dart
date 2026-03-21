@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/alarm_providers.dart';
 import '../services/ai_service.dart';
+import '../services/premium_service.dart';
 import '../services/smart_alarm_service.dart';
 import '../utils/debouncer.dart';
 import '../widgets/alarm_card.dart';
@@ -42,7 +43,9 @@ class AlarmsScreen extends ConsumerWidget {
               (alarm) => AlarmCard(
                 alarm: alarm,
                 onToggle: (enabled) {
-                  ref.read(alarmsMapProvider.notifier).toggleAlarm(alarm.id, enabled);
+                  ref
+                      .read(alarmsMapProvider.notifier)
+                      .toggleAlarm(alarm.id, enabled);
                 },
               ),
             ),
@@ -81,7 +84,8 @@ class _AddAlarmSheet extends ConsumerStatefulWidget {
 
 class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   final TextEditingController _labelController = TextEditingController();
-  final TextEditingController _voiceQuickAddController = TextEditingController();
+  final TextEditingController _voiceQuickAddController =
+      TextEditingController();
   final TextEditingController _meetingsController = TextEditingController();
   late final Debouncer _aiDebouncer;
 
@@ -111,6 +115,7 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   void initState() {
     super.initState();
     _aiDebouncer = Debouncer(delay: const Duration(milliseconds: 800));
+    _loadTeenSleepProfile();
   }
 
   @override
@@ -120,6 +125,17 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
     _meetingsController.dispose();
     _aiDebouncer.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadTeenSleepProfile() async {
+    final profile = await SmartAlarmService.getTeenSleepProfile();
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _sleepGoalHours = profile.targetSleepHours;
+    });
   }
 
   @override
@@ -206,7 +222,10 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
               ),
               const SizedBox(height: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(14),
@@ -224,13 +243,14 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                       min: 6.0,
                       max: 9.0,
                       divisions: 12,
-                      onChanged: (value) => setState(() => _sleepGoalHours = value),
+                      onChanged: (value) =>
+                          setState(() => _sleepGoalHours = value),
                     ),
                     Text(
                       'Suggested bedtime: ${_suggestedBedtimeLabel()}',
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontWeight: FontWeight.w700,
-                          ),
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ],
                 ),
@@ -306,7 +326,10 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                       ),
                     ),
                     const SizedBox(width: 4),
-                    const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Color(0xFF94A3B8),
+                    ),
                   ],
                 ),
               ),
@@ -314,8 +337,11 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
               TextField(
                 controller: _voiceQuickAddController,
                 decoration: InputDecoration(
-                  hintText: 'Voice Quick Add text, e.g. wake me at 6:20 for gym tomorrow',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  hintText:
+                      'Voice Quick Add text, e.g. wake me at 6:20 for gym tomorrow',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   suffixIcon: TextButton(
                     onPressed: _applyVoiceQuickAdd,
                     child: const Text('Apply'),
@@ -324,7 +350,10 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
               ),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF4F4F6),
                   borderRadius: BorderRadius.circular(20),
@@ -339,18 +368,20 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                         children: [
                           Text(
                             'AI SUGGEST',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 18,
-                            ),
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                ),
                           ),
                           Text(
                             _aiError ?? _aiTag,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: _aiError != null
-                                  ? Colors.red
-                                  : const Color(0xFF94A3B8),
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: _aiError != null
+                                      ? Colors.red
+                                      : const Color(0xFF94A3B8),
+                                ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -359,24 +390,34 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                     ),
                     IconButton(
                       onPressed: _loadingAI ? null : _getAiSuggestion,
-                      style: IconButton.styleFrom(backgroundColor: Colors.black),
+                      style: IconButton.styleFrom(
+                        backgroundColor: Colors.black,
+                      ),
                       icon: _loadingAI
                           ? const SizedBox(
                               width: 24,
                               height: 24,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.white,
+                                ),
                               ),
                             )
-                          : const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                          : const Icon(
+                              Icons.arrow_forward_rounded,
+                              color: Colors.white,
+                            ),
                     ),
                   ],
                 ),
               ).animate().fadeIn(duration: 260.ms),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEEF2FF),
                   borderRadius: BorderRadius.circular(20),
@@ -391,19 +432,24 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                         Expanded(
                           child: Text(
                             'GENKIT + GROQ DAILY CHOICES',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   color: const Color(0xFF111827),
                                 ),
                           ),
                         ),
                         TextButton(
-                          onPressed: _loadingDailyChoices ? null : _getDailyChoices,
+                          onPressed: _loadingDailyChoices
+                              ? null
+                              : _getDailyChoices,
                           child: _loadingDailyChoices
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text('Generate'),
                         ),
@@ -414,10 +460,8 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
                           _dailyChoicesError!,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Colors.red,
-                                letterSpacing: 0,
-                              ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: Colors.red, letterSpacing: 0),
                         ),
                       ),
                     if (_dailyChoices.isNotEmpty)
@@ -443,7 +487,10 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
               ),
               const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFECFEFF),
                   borderRadius: BorderRadius.circular(20),
@@ -458,19 +505,24 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                         Expanded(
                           child: Text(
                             'AI WEEKLY PLANNER',
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(
                                   fontWeight: FontWeight.w800,
                                   fontSize: 18,
                                 ),
                           ),
                         ),
                         TextButton(
-                          onPressed: _loadingWeeklyPlan ? null : _generateWeeklyPlan,
+                          onPressed: _loadingWeeklyPlan
+                              ? null
+                              : _generateWeeklyPlan,
                           child: _loadingWeeklyPlan
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 )
                               : const Text('Generate'),
                         ),
@@ -496,36 +548,41 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                         ),
                         Switch(
                           value: _weeklyGymDays,
-                          onChanged: (value) => setState(() => _weeklyGymDays = value),
+                          onChanged: (value) =>
+                              setState(() => _weeklyGymDays = value),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Commute: $_commuteMinutes min  •  Sleep debt: $_sleepDebtMinutes min',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(letterSpacing: 0),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(letterSpacing: 0),
                     ),
                     Slider(
                       value: _commuteMinutes.toDouble(),
                       min: 0,
                       max: 120,
                       divisions: 24,
-                      onChanged: (v) => setState(() => _commuteMinutes = v.round()),
+                      onChanged: (v) =>
+                          setState(() => _commuteMinutes = v.round()),
                     ),
                     Slider(
                       value: _sleepDebtMinutes.toDouble(),
                       min: 0,
                       max: 180,
                       divisions: 18,
-                      onChanged: (v) => setState(() => _sleepDebtMinutes = v.round()),
+                      onChanged: (v) =>
+                          setState(() => _sleepDebtMinutes = v.round()),
                     ),
                     if (_weeklyPlanError != null)
                       Text(
                         _weeklyPlanError!,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Colors.red,
-                              letterSpacing: 0,
-                            ),
+                          color: Colors.red,
+                          letterSpacing: 0,
+                        ),
                       ),
                     if (_weeklyPlan.isNotEmpty)
                       Wrap(
@@ -560,7 +617,7 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
                     value: _setAlarm,
                     onChanged: (value) => setState(() => _setAlarm = value),
                     activeTrackColor: const Color(0xFF22C55E),
-                    activeColor: Colors.white,
+                    activeThumbColor: Colors.white,
                     inactiveTrackColor: const Color(0xFFE2E8F0),
                   ),
                 ],
@@ -647,13 +704,24 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   }
 
   void _cycleSound() {
-    setState(() {
-      _sound = _sound == 'default' ? 'rotate' : 'default';
-    });
+    if (_sound == 'default') {
+      _requirePremium(PremiumFeature.rotatingAlarmSounds).then((allowed) {
+        if (!allowed || !mounted) {
+          return;
+        }
+
+        setState(() => _sound = 'rotate');
+      });
+      return;
+    }
+
+    setState(() => _sound = 'default');
   }
 
   void _applyVoiceQuickAdd() {
-    final parsed = SmartAlarmService.parseQuickAdd(_voiceQuickAddController.text);
+    final parsed = SmartAlarmService.parseQuickAdd(
+      _voiceQuickAddController.text,
+    );
     if (parsed == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not parse quick add text.')),
@@ -730,9 +798,17 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
         const SizedBox(width: 20),
         Column(
           children: [
-            _periodButton(label: 'AM', active: _isAm, onTap: () => setState(() => _isAm = true)),
+            _periodButton(
+              label: 'AM',
+              active: _isAm,
+              onTap: () => setState(() => _isAm = true),
+            ),
             const SizedBox(height: 8),
-            _periodButton(label: 'PM', active: !_isAm, onTap: () => setState(() => _isAm = false)),
+            _periodButton(
+              label: 'PM',
+              active: !_isAm,
+              onTap: () => setState(() => _isAm = false),
+            ),
           ],
         ),
       ],
@@ -797,11 +873,13 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
       });
 
       try {
-        final suggestion = await ref.read(aiSuggestionProvider(
-          _labelController.text.trim().isEmpty
-              ? 'Morning work routine and commute'
-              : _labelController.text.trim(),
-        ).future);
+        final suggestion = await ref.read(
+          aiSuggestionProvider(
+            _labelController.text.trim().isEmpty
+                ? 'Morning work routine and commute'
+                : _labelController.text.trim(),
+          ).future,
+        );
 
         if (!mounted) return;
 
@@ -825,6 +903,11 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   }
 
   Future<void> _getDailyChoices() async {
+    final allowed = await _requirePremium(PremiumFeature.aiDailyChoices);
+    if (!allowed || !mounted) {
+      return;
+    }
+
     if (!mounted) return;
 
     setState(() {
@@ -883,6 +966,11 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
   }
 
   Future<void> _generateWeeklyPlan() async {
+    final allowed = await _requirePremium(PremiumFeature.aiWeeklyPlanner);
+    if (!allowed || !mounted) {
+      return;
+    }
+
     if (!mounted) return;
 
     setState(() {
@@ -925,16 +1013,22 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
     try {
       final hour24 = _isAm ? (_hour % 12) : (_hour % 12) + 12;
 
-      await ref.read(alarmsMapProvider.notifier).addAlarm(
-        time: TimeOfDay(hour: hour24, minute: _minute),
-        label: _labelController.text.trim().isEmpty
-            ? 'Work Morning'
-            : _labelController.text.trim(),
-        repeatDays: _repeatDays.toList()..sort(),
-        isEnabled: _setAlarm,
-        aiTag: _aiTag,
-        sound: _sound,
+      await SmartAlarmService.saveTeenSleepProfile(
+        targetSleepHours: _sleepGoalHours,
       );
+
+      await ref
+          .read(alarmsMapProvider.notifier)
+          .addAlarm(
+            time: TimeOfDay(hour: hour24, minute: _minute),
+            label: _labelController.text.trim().isEmpty
+                ? 'Work Morning'
+                : _labelController.text.trim(),
+            repeatDays: _repeatDays.toList()..sort(),
+            isEnabled: _setAlarm,
+            aiTag: _aiTag,
+            sound: _sound,
+          );
 
       if (!mounted) {
         return;
@@ -953,5 +1047,17 @@ class _AddAlarmSheetState extends ConsumerState<_AddAlarmSheet> {
         ),
       );
     }
+  }
+
+  Future<bool> _requirePremium(PremiumFeature feature) async {
+    if (await PremiumService.canUse(feature)) {
+      return true;
+    }
+
+    if (!mounted) {
+      return false;
+    }
+
+    return PremiumService.showLifetimePaywall(context, feature);
   }
 }

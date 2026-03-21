@@ -156,7 +156,7 @@ class AlarmsNotifier extends StateNotifier<Future<Map<String, AlarmModel>>> {
 
   /// Cancel alarm and remove it
   Future<void> cancelAlarm(String id) async {
-    await AlarmService.cancelAlarm(id);
+    await AlarmService.deleteAlarm(id);
     final map = await state;
     map.remove(id);
     state = Future.value(Map.from(map));
@@ -197,8 +197,8 @@ class AlarmsNotifier extends StateNotifier<Future<Map<String, AlarmModel>>> {
 
 final alarmsMapProvider =
     StateNotifierProvider<AlarmsNotifier, Future<Map<String, AlarmModel>>>(
-  (ref) => AlarmsNotifier(),
-);
+      (ref) => AlarmsNotifier(),
+    );
 
 /// Provider for sorted alarms list (UI use)
 final alarmsListProvider = FutureProvider<List<AlarmModel>>((ref) async {
@@ -222,44 +222,48 @@ final aiSuggestionsEnabledProvider = StateProvider<bool>((ref) => true);
 final themeDarkProvider = StateProvider<bool>((ref) => false);
 
 /// Provider for AI suggestion with timeout
-final aiSuggestionProvider = FutureProvider.family<String, String>(
-  (ref, routine) async {
-    try {
-      return await AlarmService.getAISuggestion(routine).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('AI suggestion timed out'),
-      );
-    } catch (e) {
-      rethrow;
-    }
-  },
-);
+final aiSuggestionProvider = FutureProvider.family<String, String>((
+  ref,
+  routine,
+) async {
+  try {
+    return await AlarmService.getAISuggestion(routine).timeout(
+      const Duration(seconds: 10),
+      onTimeout: () => throw TimeoutException('AI suggestion timed out'),
+    );
+  } catch (e) {
+    rethrow;
+  }
+});
 
 final dailyAlarmChoicesProvider =
-    FutureProvider.family<List<AiAlarmChoice>, DailyAlarmChoicesRequest>(
-  (ref, request) async {
-    return AlarmService.getDailyAlarmChoices(
-      dayOfWeek: request.dayOfWeek,
-      routine: request.routine,
-    ).timeout(
-      const Duration(seconds: 12),
-      onTimeout: () => throw TimeoutException('Daily alarm choices timed out'),
-    );
-  },
-);
+    FutureProvider.family<List<AiAlarmChoice>, DailyAlarmChoicesRequest>((
+      ref,
+      request,
+    ) async {
+      return AlarmService.getDailyAlarmChoices(
+        dayOfWeek: request.dayOfWeek,
+        routine: request.routine,
+      ).timeout(
+        const Duration(seconds: 12),
+        onTimeout: () =>
+            throw TimeoutException('Daily alarm choices timed out'),
+      );
+    });
 
 final weeklyPlannerProvider =
-    FutureProvider.family<List<WeeklyAlarmPlanItem>, WeeklyPlannerRequest>(
-  (ref, request) async {
-    return AlarmService.generateWeeklyAlarmPlan(
-      routine: request.routine,
-      meetings: request.meetings,
-      gymDays: request.gymDays,
-      commuteMinutes: request.commuteMinutes,
-      sleepDebtMinutes: request.sleepDebtMinutes,
-    ).timeout(
-      const Duration(seconds: 15),
-      onTimeout: () => throw TimeoutException('Weekly planner timed out'),
-    );
-  },
-);
+    FutureProvider.family<List<WeeklyAlarmPlanItem>, WeeklyPlannerRequest>((
+      ref,
+      request,
+    ) async {
+      return AlarmService.generateWeeklyAlarmPlan(
+        routine: request.routine,
+        meetings: request.meetings,
+        gymDays: request.gymDays,
+        commuteMinutes: request.commuteMinutes,
+        sleepDebtMinutes: request.sleepDebtMinutes,
+      ).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () => throw TimeoutException('Weekly planner timed out'),
+      );
+    });

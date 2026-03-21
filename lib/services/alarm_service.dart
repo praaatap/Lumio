@@ -59,23 +59,31 @@ class AlarmService {
     await StorageService.saveAlarm(alarm);
   }
 
-  static Future<void> scheduleAlarm(AlarmModel alarm) async {
+  static Future<void> scheduleAlarm(
+    AlarmModel alarm, {
+    bool persist = true,
+  }) async {
+    await _cancelScheduledArtifacts(alarm.id);
+
     if (!_supportsNativeAlarmOps) {
-      await saveAlarm(alarm.copyWith(isEnabled: true));
+      if (persist) {
+        await saveAlarm(alarm.copyWith(isEnabled: true));
+      }
       return;
     }
 
     final targetTime = alarm.nextDateTimeFrom(DateTime.now());
     final alarmId = alarmIntId(alarm.id);
-    final selectedSound = SmartAlarmService.rotateSoundForDate(targetTime, alarm.sound);
+    final selectedSound = SmartAlarmService.rotateSoundForDate(
+      targetTime,
+      alarm.sound,
+    );
 
     final settings = AlarmSettings(
       id: alarmId,
       dateTime: targetTime,
       assetAudioPath: selectedSound == 'default' ? null : selectedSound,
-      volumeSettings:  VolumeSettings.fade(
-        fadeDuration: Duration(seconds: 8),
-      ),
+      volumeSettings: VolumeSettings.fade(fadeDuration: Duration(seconds: 8)),
       notificationSettings: NotificationSettings(
         title: alarm.label.isEmpty ? 'FlowMind Alarm' : alarm.label,
         body: alarm.aiTag,
@@ -114,10 +122,12 @@ class AlarmService {
     );
 
     final windDownMinutes = await SmartAlarmService.getWindDownMinutes();
-    final windDownTime = targetTime.subtract(Duration(minutes: windDownMinutes));
+    final windDownTime = targetTime.subtract(
+      Duration(minutes: windDownMinutes),
+    );
     if (windDownTime.isAfter(DateTime.now())) {
       await _notifications.zonedSchedule(
-        alarmId + 900000,
+        _windDownNotificationId(alarm.id),
         'Wind-down reminder',
         'Alarm in $windDownMinutes min. ${SmartAlarmService.windDownChecklist().join(' • ')}',
         tz.TZDateTime.from(windDownTime, location),
@@ -135,10 +145,28 @@ class AlarmService {
       );
     }
 
-    await saveAlarm(alarm.copyWith(isEnabled: true));
+    if (persist) {
+      await saveAlarm(alarm.copyWith(isEnabled: true));
+    }
   }
 
   static Future<void> cancelAlarm(String id) async {
+    await _cancelScheduledArtifacts(id);
+  }
+
+  static Future<void> deleteAlarm(String id) async {
+    await _cancelScheduledArtifacts(id);
+    await StorageService.deleteAlarm(id);
+  }
+
+  static Future<void> restoreEnabledAlarms() async {
+    final alarms = getAllAlarms().where((alarm) => alarm.isEnabled);
+    for (final alarm in alarms) {
+      await scheduleAlarm(alarm, persist: false);
+    }
+  }
+
+  static Future<void> _cancelScheduledArtifacts(String id) async {
     if (!_supportsNativeAlarmOps) {
       return;
     }
@@ -146,6 +174,7 @@ class AlarmService {
     final alarmId = alarmIntId(id);
     await Alarm.stop(alarmId);
     await _notifications.cancel(alarmId);
+    await _notifications.cancel(_windDownNotificationId(id));
   }
 
   static Future<void> toggleAlarm(String id, bool on) async {
@@ -231,6 +260,8 @@ class AlarmService {
 
   static int alarmIntId(String id) => _idToInt(id);
 
+  static int _windDownNotificationId(String id) => alarmIntId(id) + 900000;
+
   static AlarmModel? findByIntId(int alarmId) {
     for (final alarm in getAllAlarms()) {
       if (alarmIntId(alarm.id) == alarmId) {
@@ -249,7 +280,11 @@ class AlarmService {
       return false;
     }
 
-    alarms.sort((a, b) => a.nextDateTimeFrom(DateTime.now()).compareTo(b.nextDateTimeFrom(DateTime.now())));
+    alarms.sort(
+      (a, b) => a
+          .nextDateTimeFrom(DateTime.now())
+          .compareTo(b.nextDateTimeFrom(DateTime.now())),
+    );
     final target = alarms.first;
 
     var deltaMinutes = 0;
